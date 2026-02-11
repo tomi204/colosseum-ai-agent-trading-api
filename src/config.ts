@@ -75,6 +75,19 @@ export const config = {
     defaultNotionalUsd: parseNumber(process.env.AUTONOMOUS_DEFAULT_NOTIONAL_USD, 100),
     minConfidence: parseNumber(process.env.AUTONOMOUS_MIN_CONFIDENCE, 0.15),
   },
+  lending: {
+    enabled: parseBool(process.env.LENDING_MONITOR_ENABLED, false),
+    scanIntervalMs: parseNumber(process.env.LENDING_SCAN_INTERVAL_MS, 60000),
+  },
+  privacy: {
+    encryptionEnabled: parseBool(process.env.PRIVACY_ENCRYPTION_ENABLED, false),
+    serverSecret: process.env.PRIVACY_SERVER_SECRET ?? 'colosseum-default-secret-change-me',
+  },
+  arbitrage: {
+    enabled: parseBool(process.env.ARBITRAGE_ENABLED, false),
+    scanIntervalMs: parseNumber(process.env.ARBITRAGE_SCAN_INTERVAL_MS, 15000),
+    minSpreadBps: parseNumber(process.env.ARBITRAGE_MIN_SPREAD_BPS, 30),
+  },
   tokenRevenue: {
     baseUrl: process.env.CLAWPUMP_BASE_URL ?? 'https://www.clawpump.tech',
     apiKey: process.env.CLAWPUMP_API_KEY,

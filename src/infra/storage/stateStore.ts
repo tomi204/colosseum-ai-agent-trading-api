@@ -172,6 +172,11 @@ const normalizeState = (raw: unknown): AppState => {
       ...(parsed.autonomous ?? {}),
       agentStates: parsed.autonomous?.agentStates ?? {},
     },
+    lending: {
+      positions: (parsed as Partial<AppState>).lending?.positions ?? {},
+      alerts: (parsed as Partial<AppState>).lending?.alerts ?? {},
+      lastScanAt: (parsed as Partial<AppState>).lending?.lastScanAt ?? null,
+    },
   };
 };
 

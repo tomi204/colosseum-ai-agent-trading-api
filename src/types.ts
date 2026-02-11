@@ -1,7 +1,9 @@
+import { LendingMonitorState } from './domain/lending/lendingTypes.js';
+
 export type Side = 'buy' | 'sell';
 export type IntentStatus = 'pending' | 'processing' | 'executed' | 'rejected' | 'failed';
 export type ExecutionMode = 'paper' | 'live';
-export type StrategyId = 'momentum-v1' | 'mean-reversion-v1';
+export type StrategyId = 'momentum-v1' | 'mean-reversion-v1' | 'arbitrage-v1' | 'dca-v1' | 'twap-v1';
 
 export interface RiskLimits {
   maxPositionSizePct: number;
@@ -213,6 +215,7 @@ export interface AppState {
   marketPriceHistoryUsd: Record<string, MarketPricePoint[]>;
   metrics: MetricsState;
   autonomous: AutonomousLoopState;
+  lending: LendingMonitorState;
 }
 
 export interface RuntimeMetrics {

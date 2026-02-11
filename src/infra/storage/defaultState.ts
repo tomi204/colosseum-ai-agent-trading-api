@@ -53,5 +53,10 @@ export const createDefaultState = (): AppState => {
       lastRunAt: null,
       agentStates: {},
     },
+    lending: {
+      positions: {},
+      alerts: {},
+      lastScanAt: null,
+    },
   };
 };

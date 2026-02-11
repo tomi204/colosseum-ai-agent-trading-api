@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { AppConfig } from '../config.js';
 import { renderExperimentPage } from './experimentPage.js';
 import { FeeEngine } from '../domain/fee/feeEngine.js';
+import { redactReceipt } from '../domain/privacy/receiptRedaction.js';
+import { SkillRegistry } from '../domain/skills/skillRegistry.js';
 import { StrategyRegistry } from '../domain/strategy/strategyRegistry.js';
 import { DomainError, ErrorCode, toErrorEnvelope } from '../errors/taxonomy.js';
 import { StateStore } from '../infra/storage/stateStore.js';
@@ -10,9 +12,11 @@ import { AgentService } from '../services/agentService.js';
 import { AutonomousService } from '../services/autonomousService.js';
 import { resolveAgentFromKey } from '../services/auth.js';
 import { ExecutionService } from '../services/executionService.js';
+import { LendingMonitorService } from '../services/lendingMonitorService.js';
 import { TokenRevenueService } from '../services/tokenRevenueService.js';
 import { TradeIntentService } from '../services/tradeIntentService.js';
 import { X402Policy } from '../services/x402Policy.js';
+import { ArbitrageService } from '../services/arbitrageService.js';
 import { RuntimeMetrics } from '../types.js';
 
 interface RouteDeps {
@@ -26,13 +30,16 @@ interface RouteDeps {
   tokenRevenueService: TokenRevenueService;
   autonomousService: AutonomousService;
   x402Policy: X402Policy;
+  arbitrageService: ArbitrageService;
+  lendingMonitorService: LendingMonitorService;
+  skillRegistry: SkillRegistry;
   getRuntimeMetrics: () => RuntimeMetrics;
 }
 
 const registerAgentSchema = z.object({
   name: z.string().min(2).max(120),
   startingCapitalUsd: z.number().positive().optional(),
-  strategyId: z.enum(['momentum-v1', 'mean-reversion-v1']).optional(),
+  strategyId: z.enum(['momentum-v1', 'mean-reversion-v1', 'arbitrage-v1', 'dca-v1', 'twap-v1']).optional(),
   riskOverrides: z.object({
     maxPositionSizePct: z.number().positive().max(1).optional(),
     maxOrderNotionalUsd: z.number().positive().optional(),
@@ -61,7 +68,7 @@ const marketUpdateSchema = z.object({
 });
 
 const strategyUpdateSchema = z.object({
-  strategyId: z.enum(['momentum-v1', 'mean-reversion-v1']),
+  strategyId: z.enum(['momentum-v1', 'mean-reversion-v1', 'arbitrage-v1', 'dca-v1', 'twap-v1']),
 });
 
 const clawpumpLaunchSchema = z.object({
@@ -385,9 +392,17 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps): Pro
 
   app.get('/executions/:id/receipt', async (request, reply) => {
     const { id } = request.params as { id: string };
+    const query = request.query as { redacted?: string };
     const receipt = deps.executionService.getReceiptByExecutionId(id);
     if (!receipt) {
       return reply.code(404).send(toErrorEnvelope(ErrorCode.ReceiptNotFound, 'Execution receipt not found.'));
+    }
+
+    if (query.redacted === 'true') {
+      return {
+        executionId: id,
+        receipt: redactReceipt(receipt),
+      };
     }
 
     return {
@@ -487,6 +502,83 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps): Pro
       sendDomainError(reply, error);
       return undefined;
     }
+  });
+
+  // ─── Arbitrage endpoints ──────────────────────────────────────────────
+
+  app.get('/arbitrage/opportunities', async () => ({
+    opportunities: deps.arbitrageService.getOpportunities(),
+  }));
+
+  app.get('/arbitrage/status', async () => deps.arbitrageService.getStatus());
+
+  // ─── Lending monitor endpoints ─────────────────────────────────────────
+
+  const registerPositionSchema = z.object({
+    agentId: z.string().min(2),
+    protocol: z.enum(['kamino', 'marginfi', 'solend']),
+    market: z.string().min(1).max(120),
+    suppliedUsd: z.number().nonnegative(),
+    borrowedUsd: z.number().nonnegative(),
+    healthFactor: z.number().nonnegative(),
+    ltv: z.number().min(0).max(1),
+    wallet: z.string().min(1).max(120),
+  });
+
+  app.get('/lending/positions', async () => ({
+    positions: deps.lendingMonitorService.getPositions(),
+  }));
+
+  app.get('/lending/alerts', async () => ({
+    alerts: deps.lendingMonitorService.getAlerts(),
+  }));
+
+  app.post('/lending/positions', async (request, reply) => {
+    const parse = registerPositionSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid request payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    try {
+      const position = await deps.lendingMonitorService.registerPosition(parse.data);
+      return reply.code(201).send({ position });
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  // ─── Privacy endpoints ────────────────────────────────────────────────
+
+  app.get('/privacy/policy', async () => ({
+    encryptionEnabled: deps.config.privacy.encryptionEnabled,
+    algorithm: 'aes-256-gcm',
+    keyDerivation: 'hkdf-sha256(agentApiKey + serverSecret)',
+    redactedReceipts: true,
+    description: 'Trade intents can be encrypted before storage. Receipts can be requested in redacted form hiding exact amounts and prices while preserving hash-chain integrity.',
+  }));
+
+  // ─── Skills endpoints ─────────────────────────────────────────────────
+
+  app.get('/skills', async () => ({
+    skills: deps.skillRegistry.listAll(),
+  }));
+
+  app.get('/agents/:agentId/skills', async (request, reply) => {
+    const { agentId } = request.params as { agentId: string };
+    const agent = deps.agentService.getById(agentId);
+    if (!agent) {
+      return reply.code(404).send(toErrorEnvelope(ErrorCode.AgentNotFound, 'Agent not found.'));
+    }
+
+    return {
+      agentId,
+      skills: deps.skillRegistry.getAgentSkills(agentId),
+    };
   });
 
   app.get('/state', async () => deps.store.snapshot());

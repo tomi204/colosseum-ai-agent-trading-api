@@ -2,12 +2,15 @@ import Fastify from 'fastify';
 import { registerRoutes } from './api/routes.js';
 import { AppConfig } from './config.js';
 import { FeeEngine } from './domain/fee/feeEngine.js';
+import { SkillRegistry } from './domain/skills/skillRegistry.js';
 import { StrategyRegistry } from './domain/strategy/strategyRegistry.js';
 import { EventLogger } from './infra/logger.js';
 import { StateStore } from './infra/storage/stateStore.js';
 import { ClawpumpClient } from './integrations/clawpump/client.js';
 import { AgentService } from './services/agentService.js';
+import { ArbitrageService } from './services/arbitrageService.js';
 import { AutonomousService } from './services/autonomousService.js';
+import { LendingMonitorService } from './services/lendingMonitorService.js';
 import { ExecutionService } from './services/executionService.js';
 import { x402PaymentGate } from './services/paymentGate.js';
 import { TokenRevenueService } from './services/tokenRevenueService.js';
@@ -19,6 +22,7 @@ export interface AppContext {
   app: ReturnType<typeof Fastify>;
   worker: ExecutionWorker;
   autonomousService: AutonomousService;
+  arbitrageService: ArbitrageService;
   stateStore: StateStore;
   logger: EventLogger;
 }
@@ -65,6 +69,11 @@ export async function buildApp(config: AppConfig): Promise<AppContext> {
     config,
   );
 
+  const arbitrageService = new ArbitrageService();
+
+  const lendingMonitorService = new LendingMonitorService(stateStore, config);
+  const skillRegistry = new SkillRegistry();
+
   const x402Policy = await loadX402Policy(config.payments.x402PolicyFile, config.payments.x402RequiredPaths);
   app.addHook('preHandler', x402PaymentGate(config.payments, stateStore, x402Policy));
 
@@ -79,6 +88,9 @@ export async function buildApp(config: AppConfig): Promise<AppContext> {
     strategyRegistry,
     tokenRevenueService,
     autonomousService,
+    arbitrageService,
+    lendingMonitorService,
+    skillRegistry,
     x402Policy,
     getRuntimeMetrics: () => {
       const state = stateStore.snapshot();
@@ -94,6 +106,7 @@ export async function buildApp(config: AppConfig): Promise<AppContext> {
     app,
     worker,
     autonomousService,
+    arbitrageService,
     stateStore,
     logger,
   };
