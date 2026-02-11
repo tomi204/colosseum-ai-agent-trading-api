@@ -25,6 +25,9 @@
   ],
   "author": "",
   "license": "MIT",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "dependencies": {
     "@fastify/websocket": "^11.2.0",
     "@solana/web3.js": "^1.98.4",
