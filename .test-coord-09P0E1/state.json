@@ -1,0 +1,76 @@
+{
+  "agents": {},
+  "tradeIntents": {},
+  "executions": {},
+  "executionReceipts": {},
+  "idempotencyRecords": {},
+  "treasury": {
+    "totalFeesUsd": 0,
+    "entries": []
+  },
+  "tokenRevenue": {
+    "clawpumpLaunchAttempts": []
+  },
+  "marketPricesUsd": {
+    "SOL": 100,
+    "USDC": 1,
+    "BONK": 0.00002,
+    "JUP": 0.8
+  },
+  "marketPriceHistoryUsd": {
+    "SOL": [
+      {
+        "ts": "2026-02-11T23:53:52.940Z",
+        "priceUsd": 100
+      }
+    ],
+    "USDC": [
+      {
+        "ts": "2026-02-11T23:53:52.940Z",
+        "priceUsd": 1
+      }
+    ],
+    "BONK": [
+      {
+        "ts": "2026-02-11T23:53:52.940Z",
+        "priceUsd": 0.00002
+      }
+    ],
+    "JUP": [
+      {
+        "ts": "2026-02-11T23:53:52.940Z",
+        "priceUsd": 0.8
+      }
+    ]
+  },
+  "metrics": {
+    "startedAt": "2026-02-11T23:53:52.940Z",
+    "workerLoops": 0,
+    "intentsReceived": 0,
+    "intentsExecuted": 0,
+    "intentsRejected": 0,
+    "intentsFailed": 0,
+    "riskRejectionsByReason": {},
+    "apiPaymentDenials": 0,
+    "idempotencyReplays": 0,
+    "receiptCount": 0,
+    "quoteRetries": 0,
+    "rateLimitDenials": 0,
+    "webhooksSent": 0,
+    "simulationsRun": 0
+  },
+  "autonomous": {
+    "enabled": false,
+    "intervalMs": 30000,
+    "loopCount": 0,
+    "lastRunAt": null,
+    "agentStates": {}
+  },
+  "lending": {
+    "positions": {},
+    "alerts": {},
+    "lastScanAt": null
+  },
+  "tournaments": {},
+  "sandboxes": {}
+}

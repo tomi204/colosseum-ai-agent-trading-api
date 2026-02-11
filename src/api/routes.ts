@@ -2,6 +2,7 @@ import { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { AppConfig } from '../config.js';
 import { renderExperimentPage } from './experimentPage.js';
+import { renderDocsPage } from './docsPage.js';
 import { connectedClients } from './websocket.js';
 import { FeeEngine } from '../domain/fee/feeEngine.js';
 import { redactReceipt } from '../domain/privacy/receiptRedaction.js';
@@ -52,6 +53,7 @@ import { BenchmarkService } from '../services/benchmarkService.js';
 import { TimeframeService } from '../services/timeframeService.js';
 import { NotificationService, subscribeSchema as notificationSubscribeSchema } from '../services/notificationService.js';
 import { SentimentService } from '../services/sentimentService.js';
+import { SandboxService, createSandboxSchema, runSandboxSchema } from '../services/sandboxService.js';
 import { RateLimiter } from './rateLimiter.js';
 import { StagedPipeline } from '../domain/execution/stagedPipeline.js';
 import { RuntimeMetrics } from '../types.js';
@@ -1970,6 +1972,180 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps): Pro
     }
     return alignment;
   });
+
+  // ─── Skills Marketplace V2 endpoints ────────────────────────────────
+
+  const publishSkillSchema = z.object({
+    agentId: z.string().min(2),
+    name: z.string().min(2).max(200),
+    description: z.string().min(2).max(2000),
+    category: z.enum(['entry-signal', 'exit-signal', 'risk-management', 'position-sizing', 'timing', 'portfolio']),
+    version: z.string().min(1).max(20).optional(),
+    priceUsd: z.number().nonnegative(),
+    tags: z.array(z.string().max(50)).max(20).optional(),
+    config: z.record(z.string(), z.unknown()).optional(),
+  });
+
+  app.post('/skills/publish', async (request, reply) => {
+    const parse = publishSkillSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid skill payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    try {
+      const skill = deps.skillsMarketplaceService.publishSkill(parse.data.agentId, {
+        name: parse.data.name,
+        description: parse.data.description,
+        category: parse.data.category,
+        version: parse.data.version ?? '1.0.0',
+        priceUsd: parse.data.priceUsd,
+        tags: parse.data.tags ?? [],
+        config: parse.data.config,
+      });
+      return reply.code(201).send({ skill });
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  app.get('/skills', async (request) => {
+    const query = request.query as {
+      category?: string;
+      minRating?: string;
+      maxPrice?: string;
+      tag?: string;
+      search?: string;
+      sortBy?: string;
+      limit?: string;
+      offset?: string;
+    };
+
+    const filters: Record<string, unknown> = {};
+    if (query.category && SKILL_CATEGORIES.includes(query.category as any)) {
+      filters.category = query.category;
+    }
+    if (query.minRating) filters.minRating = Number(query.minRating);
+    if (query.maxPrice) filters.maxPrice = Number(query.maxPrice);
+    if (query.tag) filters.tag = query.tag;
+    if (query.search) filters.search = query.search;
+    if (query.sortBy) filters.sortBy = query.sortBy;
+    if (query.limit) filters.limit = Number(query.limit);
+    if (query.offset) filters.offset = Number(query.offset);
+
+    return { skills: deps.skillsMarketplaceService.listSkills(filters as any) };
+  });
+
+  const purchaseSkillSchema = z.object({
+    buyerAgentId: z.string().min(2),
+  });
+
+  app.post('/skills/:id/purchase', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const parse = purchaseSkillSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid purchase payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    try {
+      const purchase = deps.skillsMarketplaceService.purchaseSkill(parse.data.buyerAgentId, id);
+      return reply.code(201).send({ purchase });
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  const rateSkillSchema = z.object({
+    agentId: z.string().min(2),
+    rating: z.number().int().min(1).max(5),
+    review: z.string().min(1).max(1000),
+  });
+
+  app.post('/skills/:id/rate', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const parse = rateSkillSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid rating payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    try {
+      const rating = deps.skillsMarketplaceService.rateSkill(
+        parse.data.agentId,
+        id,
+        parse.data.rating,
+        parse.data.review,
+      );
+      return reply.code(201).send({ rating });
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  app.get('/skills/:id/stats', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    try {
+      const stats = deps.skillsMarketplaceService.getSkillStats(id);
+      return stats;
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  // ─── Execution Analytics Dashboard endpoints ──────────────────────────
+
+  app.get('/agents/:agentId/analytics/timeline', async (request, reply) => {
+    const { agentId } = request.params as { agentId: string };
+    try {
+      return deps.executionAnalyticsService.getExecutionTimeline(agentId);
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  app.get('/agents/:agentId/analytics/slippage', async (request, reply) => {
+    const { agentId } = request.params as { agentId: string };
+    try {
+      return deps.executionAnalyticsService.getSlippageAnalysis(agentId);
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  app.get('/analytics/volume/:symbol', async (request) => {
+    const { symbol } = request.params as { symbol: string };
+    return deps.executionAnalyticsService.getVolumeProfile(symbol);
+  });
+
+  app.get('/agents/:agentId/analytics/quality', async (request, reply) => {
+    const { agentId } = request.params as { agentId: string };
+    try {
+      return deps.executionAnalyticsService.getExecutionQuality(agentId);
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  app.get('/analytics/latency', async () =>
+    deps.executionAnalyticsService.getLatencyMetrics(),
+  );
 
   app.get('/state', async () => deps.store.snapshot());
 }

@@ -52,6 +52,9 @@ import { BenchmarkService } from './services/benchmarkService.js';
 import { TimeframeService } from './services/timeframeService.js';
 import { NotificationService } from './services/notificationService.js';
 import { SentimentService } from './services/sentimentService.js';
+import { SandboxService } from './services/sandboxService.js';
+import { SkillsMarketplaceService } from './services/skillsMarketplaceService.js';
+import { ExecutionAnalyticsService } from './services/executionAnalyticsService.js';
 import { RateLimiter } from './api/rateLimiter.js';
 import { StagedPipeline } from './domain/execution/stagedPipeline.js';
 
@@ -150,6 +153,9 @@ export async function buildApp(config: AppConfig): Promise<AppContext> {
   const timeframeService = new TimeframeService(stateStore);
   const notificationService = new NotificationService(stateStore);
   const sentimentService = new SentimentService(stateStore);
+  const sandboxService = new SandboxService(stateStore);
+  const skillsMarketplaceService = new SkillsMarketplaceService(stateStore);
+  const executionAnalyticsService = new ExecutionAnalyticsService(stateStore);
 
   // Start notification listener
   notificationService.startListening();
@@ -216,6 +222,9 @@ export async function buildApp(config: AppConfig): Promise<AppContext> {
     timeframeService,
     notificationService,
     sentimentService,
+    sandboxService,
+    skillsMarketplaceService,
+    executionAnalyticsService,
     x402Policy,
     getRuntimeMetrics: () => {
       const state = stateStore.snapshot();
