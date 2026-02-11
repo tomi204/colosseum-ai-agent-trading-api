@@ -51,9 +51,13 @@ export function renderExperimentPage(): string {
       <span class="tag">RISK TELEMETRY</span>
       <span class="tag">WEBSOCKET LIVE FEED</span>
       <span class="tag">MULTI-AGENT SQUADS</span>
-      <span class="tag">PORTFOLIO ANALYTICS</span>
+      <span class="tag">BACKTESTING</span>
+      <span class="tag">STRATEGY MARKETPLACE</span>
+      <span class="tag">ORDER BOOK</span>
+      <span class="tag">MEV PROTECTION</span>
+      <span class="tag">GOVERNANCE</span>
     </div>
-    <p>Safe, auditable, monetizable trading infrastructure for autonomous AI agents</p>
+    <p>The complete autonomous DeFi infrastructure for AI agents on Solana</p>
   </div>
 
   <div class="container">
@@ -116,6 +120,9 @@ curl -X POST /trade-intents \\
           <a href="/strategies" class="btn btn-outline">Strategies</a>
           <a href="/metrics" class="btn btn-outline">Metrics</a>
           <a href="/autonomous/status" class="btn btn-outline">Autonomous</a>
+          <a href="/marketplace/listings" class="btn btn-outline">Marketplace</a>
+          <a href="/reputation/leaderboard" class="btn btn-outline">Reputation</a>
+          <a href="/governance/proposals" class="btn btn-outline">Governance</a>
           <a href="/state" class="btn btn-outline">Full State</a>
         </div>
       </div>
@@ -158,49 +165,99 @@ GET /agents/:agentId/analytics
       </div>
     </div>
 
+    <!-- Marketplace & Backtesting -->
+    <div class="grid">
+      <div class="card">
+        <h2><span>🏪</span> Strategy Marketplace</h2>
+        <div id="marketplace-data" class="loading">Loading...</div>
+        <div style="margin-top:.8rem;display:flex;gap:.5rem;flex-wrap:wrap">
+          <a href="/marketplace/listings" class="btn btn-outline" style="font-size:.75rem">All Listings</a>
+        </div>
+      </div>
+      <div class="card">
+        <h2><span>📉</span> Order Book</h2>
+        <div id="orderbook-data" class="loading">Loading...</div>
+        <div style="margin-top:.8rem;display:flex;gap:.5rem;flex-wrap:wrap">
+          <a href="/orderbook/SOL-USDC" class="btn btn-outline" style="font-size:.75rem">SOL-USDC</a>
+          <a href="/orderbook/flow" class="btn btn-outline" style="font-size:.75rem">Intent Flow</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Reputation & Governance -->
+    <div class="grid">
+      <div class="card">
+        <h2><span>🏆</span> Agent Reputation Leaderboard</h2>
+        <div id="reputation-data" class="loading">Loading...</div>
+        <div style="margin-top:.8rem"><a href="/reputation/leaderboard" class="btn btn-outline" style="font-size:.75rem">Full Leaderboard</a></div>
+      </div>
+      <div class="card">
+        <h2><span>🗳️</span> Governance Proposals</h2>
+        <div id="governance-data" class="loading">Loading...</div>
+        <div style="margin-top:.8rem"><a href="/governance/proposals" class="btn btn-outline" style="font-size:.75rem">All Proposals</a></div>
+      </div>
+    </div>
+
+    <!-- Backtesting & Arbitrage -->
+    <div class="grid">
+      <div class="card">
+        <h2><span>🔬</span> Backtesting Engine</h2>
+        <p style="color:#aaa;font-size:.85rem;margin-bottom:.5rem">Run any strategy against historical prices. Returns Sharpe ratio, max drawdown, win rate.</p>
+        <pre>
+POST /backtest
+{
+  "strategyId": "momentum-v1",
+  "priceHistory": [100,101,102,...,120],
+  "capitalUsd": 10000,
+  "riskOverrides": { "maxOrderNotionalUsd": 500 }
+}
+
+// Returns:
+// totalReturnPct, maxDrawdownPct
+// sharpeRatio, tradeCount, winRate
+// Individual trade details</pre>
+      </div>
+      <div class="card">
+        <h2><span>🔍</span> Arbitrage Scanner</h2>
+        <div id="arbitrage-data" class="loading">Loading...</div>
+        <div style="margin-top:.8rem;display:flex;gap:.5rem;flex-wrap:wrap">
+          <a href="/arbitrage/opportunities" class="btn btn-outline" style="font-size:.75rem">Opportunities</a>
+          <a href="/arbitrage/status" class="btn btn-outline" style="font-size:.75rem">Scanner Status</a>
+        </div>
+      </div>
+    </div>
+
     <!-- Architecture -->
     <div class="card" style="margin-top:1.5rem">
       <h2><span>🏗️</span> Architecture</h2>
-      <pre style="color:#e0e0e0;font-size:.75rem">
-  Agent ──► Register ──► Get API Key
-                              │
-  Price Feed ──► /market/prices ──► Strategy Engine
-                                        │
-                              ┌─────────┴─────────┐
-                              │   momentum-v1      │
-                              │   mean-reversion   │
-                              └─────────┬─────────┘
-                                        │
-                              Autonomous Loop (optional)
-                                        │
-                              ┌─────────▼─────────┐
-                              │   Trade Intent     │
-                              └─────────┬─────────┘
-                                        │
-                              ┌─────────▼─────────┐
-                              │   Risk Engine      │
-                              │  • Position limits │
-                              │  • Drawdown caps   │
-                              │  • Cooldowns       │
-                              │  • Exposure caps   │
-                              └─────────┬─────────┘
-                                        │
-                              ┌─────────▼─────────┐
-                              │  Execution Engine  │
-                              │  paper │ live      │
-                              └─────────┬─────────┘
-                                        │ (live)
-                              ┌─────────▼─────────┐
-                              │  Jupiter Swap      │
-                              │  quote → swap →    │
-                              │  broadcast → confirm│
-                              └─────────┬─────────┘
-                                        │
-                              ┌─────────▼─────────┐
-                              │  Receipt Chain     │
-                              │  SHA-256 hash link │
-                              │  tamper-evident    │
-                              └────────────────────┘</pre>
+      <pre style="color:#e0e0e0;font-size:.72rem">
+  Agent/SDK ──► Register ──► API Key
+                    │
+  ┌─────────────────┼───────────────────────────────┐
+  │                 ▼                               │
+  │  Rate Limiter → Idempotency → Auth → x402 Gate │
+  └─────────────────┬───────────────────────────────┘
+                    │
+  ┌────────┬────────┼────────┬─────────┐
+  ▼        ▼        ▼        ▼         ▼
+Strategy  Risk    Staged   Arb      Lending
+Engine    Engine  Pipeline Scanner  Monitor
+(5 strats)(6-layer)(V→S→E) (15s)   (alerts)
+  │        │        │        │         │
+  └────────┴────────┼────────┴─────────┘
+                    ▼
+  ┌──────────────────────────────────┐
+  │  Execution: Paper │ Jupiter Live │
+  └────────────────┬─────────────────┘
+                   ▼
+  ┌──────┬─────────┼──────────┬──────┐
+  ▼      ▼         ▼          ▼      ▼
+Receipt Webhook  On-Chain   Fee    Privacy
+Chain   Delivery Proof     Engine  Layer
+(SHA256)(events) (Solana)  ($$$)  (AES256)
+  │
+  ▼
+Marketplace ↔ Reputation ↔ Governance</pre>
     </div>
 
     <!-- Feature Grid -->
@@ -262,7 +319,7 @@ const receipt = await client.getReceipt(intent.executionId);</pre>
     <p>Timmy Agent Trading API — Colosseum Agent Hackathon 2026</p>
     <p style="margin-top:.3rem">
       <a class="link" href="https://github.com/tomi204/colosseum-ai-agent-trading-api" target="_blank">GitHub</a> ·
-      61 Tests Passing · Built with TypeScript + Fastify + Jupiter + Solana
+      175 Tests · 31 Files · 65 Source Files · ~10K Lines · Built with TypeScript + Fastify + Jupiter + Solana
     </p>
   </div>
 
@@ -382,6 +439,85 @@ const receipt = await client.getReceipt(intent.executionId);</pre>
       };
     }
     connectWs();
+
+    // Marketplace loader
+    async function loadMarketplace() {
+      const m = await load('/marketplace/listings');
+      if (m && m.listings) {
+        if (m.listings.length === 0) {
+          H('#marketplace-data').innerHTML = '<p style="color:#555">No strategies listed yet</p>';
+        } else {
+          H('#marketplace-data').innerHTML = m.listings.slice(0, 6).map(l =>
+            kv(l.strategyId + ' <span style="color:#888;font-size:.7rem">by ' + l.agentId.substring(0,8) + '...</span>',
+              '⭐ ' + (l.reputation ?? 0).toFixed(1) + ' · ' + (l.subscriberCount ?? 0) + ' subs')
+          ).join('');
+        }
+      }
+    }
+    loadMarketplace();
+    setInterval(loadMarketplace, 15000);
+
+    // Order book loader
+    async function loadOrderBook() {
+      const ob = await load('/orderbook/SOL-USDC');
+      if (ob) {
+        const bids = ob.bids || [];
+        const asks = ob.asks || [];
+        H('#orderbook-data').innerHTML =
+          kv('Bid levels', bids.length) +
+          kv('Ask levels', asks.length) +
+          kv('Total bid volume', '$' + bids.reduce((s,b) => s + (b.totalNotional || 0), 0).toFixed(0)) +
+          kv('Total ask volume', '$' + asks.reduce((s,a) => s + (a.totalNotional || 0), 0).toFixed(0));
+      }
+    }
+    loadOrderBook();
+    setInterval(loadOrderBook, 15000);
+
+    // Reputation loader
+    async function loadReputation() {
+      const r = await load('/reputation/leaderboard?limit=5');
+      if (r && r.leaderboard) {
+        if (r.leaderboard.length === 0) {
+          H('#reputation-data').innerHTML = '<p style="color:#555">No reputation data yet</p>';
+        } else {
+          H('#reputation-data').innerHTML = r.leaderboard.map((a, i) =>
+            kv((i+1) + '. ' + (a.agentId || '').substring(0,12) + '...', '⭐ ' + (a.score ?? 0).toFixed(1))
+          ).join('');
+        }
+      }
+    }
+    loadReputation();
+    setInterval(loadReputation, 30000);
+
+    // Governance loader
+    async function loadGovernance() {
+      const g = await load('/governance/proposals?limit=5');
+      if (g && g.proposals) {
+        if (g.proposals.length === 0) {
+          H('#governance-data').innerHTML = '<p style="color:#555">No proposals yet — agents can propose parameter changes</p>';
+        } else {
+          H('#governance-data').innerHTML = g.proposals.map(p =>
+            kv(p.title || p.id.substring(0,12), p.status + ' · ' + (p.votesFor ?? 0) + '/' + (p.votesAgainst ?? 0))
+          ).join('');
+        }
+      }
+    }
+    loadGovernance();
+    setInterval(loadGovernance, 30000);
+
+    // Arbitrage loader
+    async function loadArbitrage() {
+      const s = await load('/arbitrage/status');
+      if (s) {
+        H('#arbitrage-data').innerHTML =
+          kv('Scanner', s.running ? '<span class="status ok"></span>Running' : '<span class="status warn"></span>Idle') +
+          kv('Scan interval', (s.intervalMs / 1000) + 's') +
+          kv('Scans completed', s.scanCount ?? 0) +
+          kv('Opportunities found', s.opportunitiesFound ?? 0);
+      }
+    }
+    loadArbitrage();
+    setInterval(loadArbitrage, 15000);
 
     // Squads loader
     async function loadSquads() {

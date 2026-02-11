@@ -29,6 +29,9 @@ import { GovernanceService } from '../services/governanceService.js';
 import { OrderBookService } from '../services/orderBookService.js';
 import { BacktestService } from '../services/backtestService.js';
 import { MarketplaceService } from '../services/marketplaceService.js';
+import { AdvancedOrderService } from '../services/advancedOrderService.js';
+import { MessagingService } from '../services/messagingService.js';
+import { MevProtectionService } from '../services/mevProtectionService.js';
 import { RateLimiter } from './rateLimiter.js';
 import { StagedPipeline } from '../domain/execution/stagedPipeline.js';
 import { RuntimeMetrics } from '../types.js';
@@ -59,6 +62,9 @@ interface RouteDeps {
   orderBookService: OrderBookService;
   backtestService: BacktestService;
   marketplaceService: MarketplaceService;
+  advancedOrderService: AdvancedOrderService;
+  messagingService: MessagingService;
+  mevProtectionService: MevProtectionService;
   getRuntimeMetrics: () => RuntimeMetrics;
 }
 
@@ -1060,6 +1066,181 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps): Pro
       return undefined;
     }
   });
+
+  // ─── Advanced Orders endpoints ──────────────────────────────────────
+
+  const limitOrderSchema = z.object({
+    agentId: z.string().min(2),
+    symbol: z.string().min(2).max(20),
+    side: z.enum(['buy', 'sell']),
+    price: z.number().positive(),
+    notionalUsd: z.number().positive(),
+    expiry: z.string().datetime().optional(),
+  });
+
+  app.post('/orders/limit', async (request, reply) => {
+    const parse = limitOrderSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid limit order payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    try {
+      const order = deps.advancedOrderService.placeLimitOrder(parse.data);
+      return reply.code(201).send({ order });
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  const stopLossSchema = z.object({
+    agentId: z.string().min(2),
+    symbol: z.string().min(2).max(20),
+    triggerPrice: z.number().positive(),
+    notionalUsd: z.number().positive(),
+  });
+
+  app.post('/orders/stop-loss', async (request, reply) => {
+    const parse = stopLossSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid stop-loss payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    try {
+      const order = deps.advancedOrderService.placeStopLoss(parse.data);
+      return reply.code(201).send({ order });
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  app.get('/orders/:agentId', async (request) => {
+    const { agentId } = request.params as { agentId: string };
+    return deps.advancedOrderService.getOrders(agentId);
+  });
+
+  app.delete('/orders/:orderId', async (request, reply) => {
+    const { orderId } = request.params as { orderId: string };
+    try {
+      const result = deps.advancedOrderService.cancelOrder(orderId);
+      return result;
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  // ─── Messaging endpoints ──────────────────────────────────────────
+
+  const sendMessageSchema = z.object({
+    from: z.string().min(2),
+    to: z.string().min(2),
+    type: z.enum(['trade-signal', 'risk-alert', 'strategy-update', 'general']),
+    payload: z.record(z.string(), z.unknown()),
+  });
+
+  app.post('/messages', async (request, reply) => {
+    const parse = sendMessageSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid message payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    try {
+      const message = deps.messagingService.sendMessage(parse.data);
+      return reply.code(201).send({ message });
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  app.get('/messages/:agentId', async (request) => {
+    const { agentId } = request.params as { agentId: string };
+    const query = request.query as { limit?: string };
+    const limit = Math.min(Math.max(Number(query.limit ?? 50), 1), 200);
+    return { messages: deps.messagingService.getInbox(agentId, limit) };
+  });
+
+  const squadMessageSchema = z.object({
+    from: z.string().min(2),
+    type: z.enum(['trade-signal', 'risk-alert', 'strategy-update', 'general']),
+    payload: z.record(z.string(), z.unknown()),
+  });
+
+  app.post('/squads/:id/messages', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const parse = squadMessageSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid squad message payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    try {
+      const message = deps.messagingService.broadcastToSquad({
+        ...parse.data,
+        squadId: id,
+      });
+      return reply.code(201).send({ message });
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  app.get('/squads/:id/messages', async (request) => {
+    const { id } = request.params as { id: string };
+    const query = request.query as { limit?: string };
+    const limit = Math.min(Math.max(Number(query.limit ?? 50), 1), 200);
+    return { messages: deps.messagingService.getSquadMessages(id, limit) };
+  });
+
+  // ─── MEV Protection endpoints ─────────────────────────────────────
+
+  const mevAnalyzeSchema = z.object({
+    symbol: z.string().min(2).max(20),
+    side: z.enum(['buy', 'sell']),
+    notionalUsd: z.number().positive(),
+    slippageTolerance: z.number().min(0).max(1).optional(),
+    poolLiquidityUsd: z.number().positive().optional(),
+    recentPoolTxCount: z.number().nonnegative().int().optional(),
+  });
+
+  app.post('/mev/analyze', async (request, reply) => {
+    const parse = mevAnalyzeSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid MEV analysis payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    try {
+      const report = deps.mevProtectionService.analyze(parse.data);
+      return { report };
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  app.get('/mev/stats', async () => deps.mevProtectionService.getMevStats());
 
   app.get('/state', async () => deps.store.snapshot());
 }

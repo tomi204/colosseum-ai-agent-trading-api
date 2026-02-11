@@ -22,6 +22,7 @@ export const ErrorCode = {
   ProofNotFound: 'proof_not_found',
   ListingNotFound: 'listing_not_found',
   BacktestFailed: 'backtest_failed',
+  OrderNotFound: 'order_not_found',
   InternalError: 'internal_error',
 } as const;
 

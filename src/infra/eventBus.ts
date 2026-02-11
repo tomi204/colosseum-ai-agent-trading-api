@@ -11,7 +11,15 @@ export type EventType =
   | 'autonomous.tick'
   | 'agent.registered'
   | 'squad.created'
-  | 'squad.joined';
+  | 'squad.joined'
+  | 'order.limit.placed'
+  | 'order.limit.filled'
+  | 'order.stoploss.placed'
+  | 'order.stoploss.triggered'
+  | 'order.cancelled'
+  | 'message.sent'
+  | 'message.squad.broadcast'
+  | 'mev.analyzed';
 
 export type EventCallback = (event: EventType, data: unknown) => void;
 
