@@ -2,8 +2,8 @@
 
 **The complete autonomous DeFi infrastructure for AI agents on Solana — trading, arbitrage, lending, backtesting, multi-agent coordination, and a strategy marketplace.**
 
-[![Tests](https://img.shields.io/badge/tests-295%20passing-brightgreen)](#tests)
-[![Test Files](https://img.shields.io/badge/test%20files-41-blue)](#tests)
+[![Tests](https://img.shields.io/badge/tests-356%20passing-brightgreen)](#tests)
+[![Test Files](https://img.shields.io/badge/test%20files-45-blue)](#tests)
 [![Live on Mainnet](https://img.shields.io/badge/mainnet-2%20live%20txs-blue)](https://solscan.io/tx/5qZERks6yv1Rjhm5wHvuLRt36nofPrgrCdmeFP5xbVwkGoj4sAubdnXo6MoZUS3XsxYECcgL7ENBdMkoMjmx8kG7)
 [![Live Demo](https://img.shields.io/badge/demo-live-green)](https://colosseum-ai-agent-trading-api.onrender.com/health)
 [![SDK](https://img.shields.io/badge/SDK-TypeScript-blue)](#sdk)
