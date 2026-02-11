@@ -6,16 +6,16 @@
 
 ## Live Deployment
 
-> **🔴 Live now:** [`https://df7c-89-187-168-50.ngrok-free.app`](https://df7c-89-187-168-50.ngrok-free.app/health)
+> **🔴 Live now:** [`https://colosseum-ai-agent-trading-api.onrender.com`](https://colosseum-ai-agent-trading-api.onrender.com/health)
 
 Try these endpoints right now:
-- [`/health`](https://df7c-89-187-168-50.ngrok-free.app/health) — system health + stats
-- [`/experiment`](https://df7c-89-187-168-50.ngrok-free.app/experiment) — interactive dashboard
-- [`/agents`](https://df7c-89-187-168-50.ngrok-free.app/agents) — registered agents
-- [`/marketplace/listings`](https://df7c-89-187-168-50.ngrok-free.app/marketplace/listings) — strategy marketplace
-- [`/orderbook/SOL-USDC`](https://df7c-89-187-168-50.ngrok-free.app/orderbook/SOL-USDC) — order book depth
-- [`/arbitrage/status`](https://df7c-89-187-168-50.ngrok-free.app/arbitrage/status) — arbitrage scanner
-- [`/reputation/leaderboard`](https://df7c-89-187-168-50.ngrok-free.app/reputation/leaderboard) — agent reputation
+- [`/health`](https://colosseum-ai-agent-trading-api.onrender.com/health) — system health + stats
+- [`/experiment`](https://colosseum-ai-agent-trading-api.onrender.com/experiment) — interactive dashboard
+- [`/agents`](https://colosseum-ai-agent-trading-api.onrender.com/agents) — registered agents
+- [`/marketplace/listings`](https://colosseum-ai-agent-trading-api.onrender.com/marketplace/listings) — strategy marketplace
+- [`/orderbook/SOL-USDC`](https://colosseum-ai-agent-trading-api.onrender.com/orderbook/SOL-USDC) — order book depth
+- [`/arbitrage/status`](https://colosseum-ai-agent-trading-api.onrender.com/arbitrage/status) — arbitrage scanner
+- [`/reputation/leaderboard`](https://colosseum-ai-agent-trading-api.onrender.com/reputation/leaderboard) — agent reputation
 
 ---
 

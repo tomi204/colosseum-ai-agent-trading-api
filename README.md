@@ -5,11 +5,11 @@
 [![Tests](https://img.shields.io/badge/tests-175%20passing-brightgreen)](#tests)
 [![Test Files](https://img.shields.io/badge/test%20files-31-blue)](#tests)
 [![Live on Mainnet](https://img.shields.io/badge/mainnet-2%20live%20txs-blue)](https://solscan.io/tx/5qZERks6yv1Rjhm5wHvuLRt36nofPrgrCdmeFP5xbVwkGoj4sAubdnXo6MoZUS3XsxYECcgL7ENBdMkoMjmx8kG7)
-[![Live Demo](https://img.shields.io/badge/demo-live-green)](https://df7c-89-187-168-50.ngrok-free.app/health)
+[![Live Demo](https://img.shields.io/badge/demo-live-green)](https://colosseum-ai-agent-trading-api.onrender.com/health)
 [![SDK](https://img.shields.io/badge/SDK-TypeScript-blue)](#sdk)
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow)](#license)
 
-> **🔴 Live now:** [Health](https://df7c-89-187-168-50.ngrok-free.app/health) · [Experiment UI](https://df7c-89-187-168-50.ngrok-free.app/experiment) · [Agents](https://df7c-89-187-168-50.ngrok-free.app/agents) · [Order Book](https://df7c-89-187-168-50.ngrok-free.app/orderbook/SOL-USDC) · [Marketplace](https://df7c-89-187-168-50.ngrok-free.app/marketplace/listings) · [Metrics](https://df7c-89-187-168-50.ngrok-free.app/metrics)
+> **🔴 Live now:** [Health](https://colosseum-ai-agent-trading-api.onrender.com/health) · [Experiment UI](https://colosseum-ai-agent-trading-api.onrender.com/experiment) · [Agents](https://colosseum-ai-agent-trading-api.onrender.com/agents) · [Order Book](https://colosseum-ai-agent-trading-api.onrender.com/orderbook/SOL-USDC) · [Marketplace](https://colosseum-ai-agent-trading-api.onrender.com/marketplace/listings) · [Metrics](https://colosseum-ai-agent-trading-api.onrender.com/metrics)
 
 ---
 
