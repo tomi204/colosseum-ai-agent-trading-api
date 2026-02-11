@@ -18,6 +18,8 @@ export const ErrorCode = {
   RateLimited: 'rate_limited',
   PipelineNotFound: 'pipeline_not_found',
   SimulationFailed: 'simulation_failed',
+  ProposalNotFound: 'proposal_not_found',
+  ProofNotFound: 'proof_not_found',
   InternalError: 'internal_error',
 } as const;
 

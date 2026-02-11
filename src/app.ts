@@ -23,6 +23,9 @@ import { SimulationService } from './services/simulationService.js';
 import { WebhookService } from './services/webhookService.js';
 import { ExecutionWorker } from './services/worker.js';
 import { loadX402Policy } from './services/x402Policy.js';
+import { ReputationService } from './services/reputationService.js';
+import { ProofAnchorService } from './services/proofAnchorService.js';
+import { GovernanceService } from './services/governanceService.js';
 import { RateLimiter } from './api/rateLimiter.js';
 import { StagedPipeline } from './domain/execution/stagedPipeline.js';
 
@@ -92,6 +95,9 @@ export async function buildApp(config: AppConfig): Promise<AppContext> {
   const webhookService = new WebhookService(logger);
   const rateLimiter = new RateLimiter({ intentsPerMinute: config.rateLimit.intentsPerMinute });
   const stagedPipeline = new StagedPipeline();
+  const reputationService = new ReputationService(stateStore);
+  const proofAnchorService = new ProofAnchorService(stateStore, config.trading.liveEnabled);
+  const governanceService = new GovernanceService(stateStore);
 
   const x402Policy = await loadX402Policy(config.payments.x402PolicyFile, config.payments.x402RequiredPaths);
   app.addHook('preHandler', x402PaymentGate(config.payments, stateStore, x402Policy));
@@ -116,6 +122,9 @@ export async function buildApp(config: AppConfig): Promise<AppContext> {
     webhookService,
     rateLimiter,
     stagedPipeline,
+    reputationService,
+    proofAnchorService,
+    governanceService,
     x402Policy,
     getRuntimeMetrics: () => {
       const state = stateStore.snapshot();

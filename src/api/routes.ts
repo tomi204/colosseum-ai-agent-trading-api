@@ -23,6 +23,9 @@ import { X402Policy } from '../services/x402Policy.js';
 import { SimulationService } from '../services/simulationService.js';
 import { WebhookService } from '../services/webhookService.js';
 import { ArbitrageService } from '../services/arbitrageService.js';
+import { ReputationService } from '../services/reputationService.js';
+import { ProofAnchorService } from '../services/proofAnchorService.js';
+import { GovernanceService } from '../services/governanceService.js';
 import { RateLimiter } from './rateLimiter.js';
 import { StagedPipeline } from '../domain/execution/stagedPipeline.js';
 import { RuntimeMetrics } from '../types.js';
@@ -47,6 +50,9 @@ interface RouteDeps {
   webhookService: WebhookService;
   rateLimiter: RateLimiter;
   stagedPipeline: StagedPipeline;
+  reputationService: ReputationService;
+  proofAnchorService: ProofAnchorService;
+  governanceService: GovernanceService;
   getRuntimeMetrics: () => RuntimeMetrics;
 }
 
@@ -819,6 +825,118 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps): Pro
   // ─── Pipeline stage metrics endpoint ───────────────────────────────────
 
   app.get('/pipeline/metrics', async () => deps.stagedPipeline.getGlobalStageMetrics());
+
+  // ─── Reputation endpoints ────────────────────────────────────────────
+
+  app.get('/agents/:agentId/reputation', async (request, reply) => {
+    const { agentId } = request.params as { agentId: string };
+    const reputation = deps.reputationService.calculate(agentId);
+    if (!reputation) {
+      return reply.code(404).send(toErrorEnvelope(ErrorCode.AgentNotFound, 'Agent not found.'));
+    }
+    return reputation;
+  });
+
+  app.get('/reputation/leaderboard', async (request) => {
+    const query = request.query as { limit?: string };
+    const limit = Math.min(Math.max(Number(query.limit ?? 50), 1), 200);
+    return deps.reputationService.leaderboard(limit);
+  });
+
+  // ─── On-chain proof anchoring endpoints ─────────────────────────────
+
+  app.get('/proofs/anchors', async (request) => {
+    const query = request.query as { limit?: string };
+    const limit = Math.min(Math.max(Number(query.limit ?? 50), 1), 200);
+    return { anchors: deps.proofAnchorService.listAnchors(limit) };
+  });
+
+  app.post('/proofs/anchor', async (_request, reply) => {
+    try {
+      const anchor = await deps.proofAnchorService.createAnchor();
+      if (!anchor) {
+        return { message: 'no_new_receipts', anchor: null };
+      }
+      return reply.code(201).send({ anchor });
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  app.get('/proofs/verify/:receiptId', async (request, reply) => {
+    const { receiptId } = request.params as { receiptId: string };
+    const proof = deps.proofAnchorService.verifyReceipt(receiptId);
+    if (!proof) {
+      return reply.code(404).send(toErrorEnvelope(ErrorCode.ProofNotFound, 'Receipt not found in any proof anchor.'));
+    }
+    return proof;
+  });
+
+  // ─── Governance endpoints ──────────────────────────────────────────
+
+  const createProposalSchema = z.object({
+    proposerId: z.string().min(2),
+    type: z.enum(['strategy_change', 'risk_parameter', 'fee_adjustment', 'general']),
+    title: z.string().min(2).max(200),
+    description: z.string().min(2).max(2000),
+    params: z.record(z.string(), z.unknown()),
+    expiresInMs: z.number().positive().optional(),
+  });
+
+  app.post('/governance/proposals', async (request, reply) => {
+    const parse = createProposalSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid proposal payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    try {
+      const proposal = deps.governanceService.createProposal(parse.data);
+      return reply.code(201).send({ proposal });
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  const castVoteSchema = z.object({
+    agentId: z.string().min(2),
+    value: z.enum(['for', 'against']),
+  });
+
+  app.post('/governance/proposals/:id/vote', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const parse = castVoteSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid vote payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    try {
+      const proposal = deps.governanceService.vote(id, parse.data);
+      return { proposal };
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  app.get('/governance/proposals', async (request) => {
+    const query = request.query as { status?: string };
+    const validStatuses = ['active', 'approved', 'rejected', 'expired'];
+    const statusFilter = query.status && validStatuses.includes(query.status)
+      ? query.status as 'active' | 'approved' | 'rejected' | 'expired'
+      : undefined;
+
+    return { proposals: deps.governanceService.listProposals(statusFilter) };
+  });
 
   app.get('/state', async () => deps.store.snapshot());
 }
