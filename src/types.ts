@@ -36,6 +36,7 @@ export interface Agent {
   riskRejectionsByReason: Record<string, number>;
   strategyId: StrategyId;
   lastTradeAt?: string;
+  webhookUrl?: string;
 }
 
 export interface TradeIntent {
@@ -180,6 +181,9 @@ export interface MetricsState {
   idempotencyReplays: number;
   receiptCount: number;
   quoteRetries: number;
+  rateLimitDenials: number;
+  webhooksSent: number;
+  simulationsRun: number;
 }
 
 export interface AutonomousAgentSnapshot {

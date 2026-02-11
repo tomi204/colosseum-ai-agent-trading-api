@@ -45,6 +45,9 @@ export const createDefaultState = (): AppState => {
       idempotencyReplays: 0,
       receiptCount: 0,
       quoteRetries: 0,
+      rateLimitDenials: 0,
+      webhooksSent: 0,
+      simulationsRun: 0,
     },
     autonomous: {
       enabled: false,

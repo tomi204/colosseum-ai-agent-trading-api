@@ -49,6 +49,9 @@ export function renderExperimentPage(): string {
       <span class="tag">SOLANA MAINNET</span>
       <span class="tag">VERIFIABLE RECEIPTS</span>
       <span class="tag">RISK TELEMETRY</span>
+      <span class="tag">WEBSOCKET LIVE FEED</span>
+      <span class="tag">MULTI-AGENT SQUADS</span>
+      <span class="tag">PORTFOLIO ANALYTICS</span>
     </div>
     <p>Safe, auditable, monetizable trading infrastructure for autonomous AI agents</p>
   </div>
@@ -115,6 +118,43 @@ curl -X POST /trade-intents \\
           <a href="/autonomous/status" class="btn btn-outline">Autonomous</a>
           <a href="/state" class="btn btn-outline">Full State</a>
         </div>
+      </div>
+    </div>
+
+    <!-- Live Event Feed -->
+    <div class="card" style="margin-bottom:1.5rem">
+      <h2><span>📡</span> Live Event Feed <span id="ws-status" style="font-size:.7rem;color:#888">(connecting...)</span></h2>
+      <p style="color:#aaa;font-size:.85rem;margin-bottom:.5rem">Real-time events via WebSocket — <span class="mono">/ws</span></p>
+      <div id="event-feed" style="max-height:280px;overflow-y:auto;background:#0d0d14;border:1px solid #1e1e2e;border-radius:8px;padding:.8rem;font-size:.78rem;font-family:'SF Mono',Monaco,Consolas,monospace;color:#9ca3af">
+        <div style="color:#555">Waiting for events...</div>
+      </div>
+      <div style="margin-top:.5rem;display:flex;gap:.5rem;align-items:center">
+        <span style="font-size:.8rem;color:#888">Connected clients: <strong id="ws-clients">0</strong></span>
+        <button class="btn btn-outline" style="font-size:.75rem;padding:4px 10px" onclick="document.getElementById('event-feed').innerHTML=''">Clear</button>
+      </div>
+    </div>
+
+    <!-- Squads & Coordination -->
+    <div class="grid">
+      <div class="card">
+        <h2><span>👥</span> Squad Coordination</h2>
+        <div id="squads-data" class="loading">Loading...</div>
+        <div style="margin-top:.8rem;display:flex;gap:.5rem;flex-wrap:wrap">
+          <a href="/squads" class="btn btn-outline" style="font-size:.75rem">All Squads</a>
+        </div>
+      </div>
+      <div class="card">
+        <h2><span>📈</span> Agent Analytics</h2>
+        <p style="color:#aaa;font-size:.85rem;margin-bottom:.5rem">Per-agent Sharpe ratio, win rate, drawdown, and P&L summaries</p>
+        <pre>
+# Get analytics for an agent
+GET /agents/:agentId/analytics
+
+# Response includes:
+# - sharpeRatio, sortinoRatio
+# - winRate, avgWin, avgLoss
+# - maxDrawdown + duration
+# - daily & weekly P&L</pre>
       </div>
     </div>
 
@@ -294,6 +334,70 @@ const receipt = await client.getReceipt(intent.executionId);</pre>
 
     init();
     setInterval(init, 15000);
+
+    // ─── WebSocket live feed ────────────────────────────────
+    const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    let ws;
+    const eventColors = {
+      'intent.created': '#60a5fa',
+      'intent.executed': '#4ade80',
+      'intent.rejected': '#f87171',
+      'price.updated': '#fbbf24',
+      'autonomous.tick': '#a78bfa',
+      'agent.registered': '#34d399',
+      'squad.created': '#f472b6',
+      'squad.joined': '#fb923c',
+      'connected': '#888',
+    };
+
+    function connectWs() {
+      ws = new WebSocket(wsProto + '//' + location.host + '/ws');
+      ws.onopen = () => {
+        H('#ws-status').textContent = '(connected)';
+        H('#ws-status').style.color = '#4ade80';
+      };
+      ws.onclose = () => {
+        H('#ws-status').textContent = '(disconnected)';
+        H('#ws-status').style.color = '#f87171';
+        setTimeout(connectWs, 3000);
+      };
+      ws.onerror = () => ws.close();
+      ws.onmessage = (e) => {
+        try {
+          const msg = JSON.parse(e.data);
+          if (msg.type === 'connected') {
+            H('#ws-clients').textContent = msg.data?.clients ?? '?';
+            return;
+          }
+          const feed = H('#event-feed');
+          const color = eventColors[msg.type] || '#9ca3af';
+          const time = msg.ts ? new Date(msg.ts).toLocaleTimeString() : '';
+          const line = document.createElement('div');
+          line.style.marginBottom = '3px';
+          line.innerHTML = '<span style="color:#555">' + time + '</span> <span style="color:' + color + ';font-weight:600">' + msg.type + '</span> ' + JSON.stringify(msg.data ?? {});
+          feed.prepend(line);
+          // Keep feed bounded
+          while (feed.children.length > 200) feed.removeChild(feed.lastChild);
+        } catch {}
+      };
+    }
+    connectWs();
+
+    // Squads loader
+    async function loadSquads() {
+      const s = await load('/squads');
+      if (s && s.squads) {
+        if (s.squads.length === 0) {
+          H('#squads-data').innerHTML = '<p style="color:#555">No squads created yet</p>';
+        } else {
+          H('#squads-data').innerHTML = s.squads.map(sq =>
+            kv(sq.name, sq.memberIds.length + ' members')
+          ).join('');
+        }
+      }
+    }
+    loadSquads();
+    setInterval(loadSquads, 15000);
   </script>
 </body>
 </html>`;

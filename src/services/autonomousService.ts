@@ -7,6 +7,7 @@ import {
 } from '../domain/autonomous/autonomousGuard.js';
 import { StrategyRegistry } from '../domain/strategy/strategyRegistry.js';
 import { RiskEngine } from '../domain/risk/riskEngine.js';
+import { eventBus } from '../infra/eventBus.js';
 import { EventLogger } from '../infra/logger.js';
 import { StateStore } from '../infra/storage/stateStore.js';
 import { Agent, AutonomousLoopState, TradeIntent } from '../types.js';
@@ -129,6 +130,12 @@ export class AutonomousService {
         state.autonomous.loopCount += 1;
         state.autonomous.lastRunAt = now;
         return undefined;
+      });
+
+      eventBus.emit('autonomous.tick', {
+        agentsEvaluated: decisions.length,
+        intentsCreated: decisions.filter((d) => d.action !== 'skip').length,
+        loopCount: this.store.snapshot().autonomous.loopCount,
       });
 
       // Log summary

@@ -4,6 +4,7 @@ import { FeeEngine } from '../domain/fee/feeEngine.js';
 import { ReceiptEngine } from '../domain/receipt/receiptEngine.js';
 import { RiskEngine } from '../domain/risk/riskEngine.js';
 import { StrategyRegistry } from '../domain/strategy/strategyRegistry.js';
+import { eventBus } from '../infra/eventBus.js';
 import { JupiterClient } from '../infra/live/jupiterClient.js';
 import { EventLogger } from '../infra/logger.js';
 import { StateStore } from '../infra/storage/stateStore.js';
@@ -297,6 +298,14 @@ export class ExecutionService {
       return undefined;
     });
 
+    eventBus.emit('intent.executed', {
+      intentId: intent.id,
+      agentId: intent.agentId,
+      symbol: intent.symbol,
+      side: intent.side,
+      mode: 'paper',
+    });
+
     await this.logger.log('info', 'intent.executed.paper', {
       intentId: intent.id,
       agentId: intent.agentId,
@@ -423,6 +432,15 @@ export class ExecutionService {
 
       state.metrics.intentsExecuted += 1;
       return undefined;
+    });
+
+    eventBus.emit('intent.executed', {
+      intentId: intent.id,
+      agentId: intent.agentId,
+      symbol: intent.symbol,
+      side: intent.side,
+      mode: 'live',
+      txSignature: swap.txSignature,
     });
 
     await this.logger.log('info', 'intent.executed.live', {
@@ -561,6 +579,8 @@ export class ExecutionService {
 
       return undefined;
     });
+
+    eventBus.emit('intent.rejected', { intentId, reason });
 
     await this.logger.log('warn', 'intent.rejected', { intentId, reason });
   }

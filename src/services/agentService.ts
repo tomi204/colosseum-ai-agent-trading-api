@@ -12,6 +12,7 @@ export interface RegisterAgentInput {
   name: string;
   startingCapitalUsd?: number;
   strategyId?: StrategyId;
+  webhookUrl?: string;
   riskOverrides?: Partial<RiskLimits>;
 }
 
@@ -58,6 +59,7 @@ export class AgentService {
       dailyRealizedPnlUsd: {},
       strategyId,
       riskRejectionsByReason: {},
+      ...(input.webhookUrl ? { webhookUrl: input.webhookUrl } : {}),
     };
 
     await this.store.transaction((state) => {

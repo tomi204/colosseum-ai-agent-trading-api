@@ -88,6 +88,9 @@ export const config = {
     scanIntervalMs: parseNumber(process.env.ARBITRAGE_SCAN_INTERVAL_MS, 15000),
     minSpreadBps: parseNumber(process.env.ARBITRAGE_MIN_SPREAD_BPS, 30),
   },
+  rateLimit: {
+    intentsPerMinute: parseNumber(process.env.RATE_LIMIT_INTENTS_PER_MINUTE, 60),
+  },
   tokenRevenue: {
     baseUrl: process.env.CLAWPUMP_BASE_URL ?? 'https://www.clawpump.tech',
     apiKey: process.env.CLAWPUMP_API_KEY,

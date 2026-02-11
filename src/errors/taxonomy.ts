@@ -13,6 +13,11 @@ export const ErrorCode = {
   IntegrationMisconfigured: 'integration_misconfigured',
   IntegrationUnavailable: 'integration_unavailable',
   UpstreamRateLimited: 'upstream_rate_limited',
+  SquadNotFound: 'squad_not_found',
+  SquadCollision: 'squad_collision',
+  RateLimited: 'rate_limited',
+  PipelineNotFound: 'pipeline_not_found',
+  SimulationFailed: 'simulation_failed',
   InternalError: 'internal_error',
 } as const;
 

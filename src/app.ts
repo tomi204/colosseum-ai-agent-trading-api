@@ -1,5 +1,7 @@
 import Fastify from 'fastify';
+import fastifyWebSocket from '@fastify/websocket';
 import { registerRoutes } from './api/routes.js';
+import { registerWebSocket } from './api/websocket.js';
 import { AppConfig } from './config.js';
 import { FeeEngine } from './domain/fee/feeEngine.js';
 import { SkillRegistry } from './domain/skills/skillRegistry.js';
@@ -8,15 +10,21 @@ import { EventLogger } from './infra/logger.js';
 import { StateStore } from './infra/storage/stateStore.js';
 import { ClawpumpClient } from './integrations/clawpump/client.js';
 import { AgentService } from './services/agentService.js';
+import { AnalyticsService } from './services/analyticsService.js';
 import { ArbitrageService } from './services/arbitrageService.js';
 import { AutonomousService } from './services/autonomousService.js';
+import { CoordinationService } from './services/coordinationService.js';
 import { LendingMonitorService } from './services/lendingMonitorService.js';
 import { ExecutionService } from './services/executionService.js';
 import { x402PaymentGate } from './services/paymentGate.js';
 import { TokenRevenueService } from './services/tokenRevenueService.js';
 import { TradeIntentService } from './services/tradeIntentService.js';
+import { SimulationService } from './services/simulationService.js';
+import { WebhookService } from './services/webhookService.js';
 import { ExecutionWorker } from './services/worker.js';
 import { loadX402Policy } from './services/x402Policy.js';
+import { RateLimiter } from './api/rateLimiter.js';
+import { StagedPipeline } from './domain/execution/stagedPipeline.js';
 
 export interface AppContext {
   app: ReturnType<typeof Fastify>;
@@ -31,6 +39,9 @@ export async function buildApp(config: AppConfig): Promise<AppContext> {
   const app = Fastify({
     logger: false,
   });
+
+  // Register WebSocket plugin first so routes can use { websocket: true }.
+  await app.register(fastifyWebSocket);
 
   const stateStore = new StateStore(config.paths.stateFile);
   await stateStore.init();
@@ -71,8 +82,16 @@ export async function buildApp(config: AppConfig): Promise<AppContext> {
 
   const arbitrageService = new ArbitrageService();
 
+  const coordinationService = new CoordinationService(stateStore);
+  const analyticsService = new AnalyticsService(stateStore);
+
   const lendingMonitorService = new LendingMonitorService(stateStore, config);
   const skillRegistry = new SkillRegistry();
+
+  const simulationService = new SimulationService(stateStore, feeEngine, config);
+  const webhookService = new WebhookService(logger);
+  const rateLimiter = new RateLimiter({ intentsPerMinute: config.rateLimit.intentsPerMinute });
+  const stagedPipeline = new StagedPipeline();
 
   const x402Policy = await loadX402Policy(config.payments.x402PolicyFile, config.payments.x402RequiredPaths);
   app.addHook('preHandler', x402PaymentGate(config.payments, stateStore, x402Policy));
@@ -89,8 +108,14 @@ export async function buildApp(config: AppConfig): Promise<AppContext> {
     tokenRevenueService,
     autonomousService,
     arbitrageService,
+    coordinationService,
+    analyticsService,
     lendingMonitorService,
     skillRegistry,
+    simulationService,
+    webhookService,
+    rateLimiter,
+    stagedPipeline,
     x402Policy,
     getRuntimeMetrics: () => {
       const state = stateStore.snapshot();
@@ -101,6 +126,9 @@ export async function buildApp(config: AppConfig): Promise<AppContext> {
       };
     },
   });
+
+  // Register WebSocket live event feed endpoint.
+  await registerWebSocket(app);
 
   return {
     app,

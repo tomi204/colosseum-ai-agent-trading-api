@@ -2,21 +2,29 @@ import { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { AppConfig } from '../config.js';
 import { renderExperimentPage } from './experimentPage.js';
+import { connectedClients } from './websocket.js';
 import { FeeEngine } from '../domain/fee/feeEngine.js';
 import { redactReceipt } from '../domain/privacy/receiptRedaction.js';
 import { SkillRegistry } from '../domain/skills/skillRegistry.js';
 import { StrategyRegistry } from '../domain/strategy/strategyRegistry.js';
 import { DomainError, ErrorCode, toErrorEnvelope } from '../errors/taxonomy.js';
+import { eventBus } from '../infra/eventBus.js';
 import { StateStore } from '../infra/storage/stateStore.js';
 import { AgentService } from '../services/agentService.js';
+import { AnalyticsService } from '../services/analyticsService.js';
 import { AutonomousService } from '../services/autonomousService.js';
+import { CoordinationService } from '../services/coordinationService.js';
 import { resolveAgentFromKey } from '../services/auth.js';
 import { ExecutionService } from '../services/executionService.js';
 import { LendingMonitorService } from '../services/lendingMonitorService.js';
 import { TokenRevenueService } from '../services/tokenRevenueService.js';
 import { TradeIntentService } from '../services/tradeIntentService.js';
 import { X402Policy } from '../services/x402Policy.js';
+import { SimulationService } from '../services/simulationService.js';
+import { WebhookService } from '../services/webhookService.js';
 import { ArbitrageService } from '../services/arbitrageService.js';
+import { RateLimiter } from './rateLimiter.js';
+import { StagedPipeline } from '../domain/execution/stagedPipeline.js';
 import { RuntimeMetrics } from '../types.js';
 
 interface RouteDeps {
@@ -31,8 +39,14 @@ interface RouteDeps {
   autonomousService: AutonomousService;
   x402Policy: X402Policy;
   arbitrageService: ArbitrageService;
+  coordinationService: CoordinationService;
+  analyticsService: AnalyticsService;
   lendingMonitorService: LendingMonitorService;
   skillRegistry: SkillRegistry;
+  simulationService: SimulationService;
+  webhookService: WebhookService;
+  rateLimiter: RateLimiter;
+  stagedPipeline: StagedPipeline;
   getRuntimeMetrics: () => RuntimeMetrics;
 }
 
@@ -40,6 +54,7 @@ const registerAgentSchema = z.object({
   name: z.string().min(2).max(120),
   startingCapitalUsd: z.number().positive().optional(),
   strategyId: z.enum(['momentum-v1', 'mean-reversion-v1', 'arbitrage-v1', 'dca-v1', 'twap-v1']).optional(),
+  webhookUrl: z.string().url().optional(),
   riskOverrides: z.object({
     maxPositionSizePct: z.number().positive().max(1).optional(),
     maxOrderNotionalUsd: z.number().positive().optional(),
@@ -48,6 +63,17 @@ const registerAgentSchema = z.object({
     maxDrawdownPct: z.number().positive().max(1).optional(),
     cooldownSeconds: z.number().nonnegative().optional(),
   }).partial().optional(),
+});
+
+const simulateSchema = z.object({
+  agentId: z.string().min(2),
+  symbol: z.string().min(2).max(20),
+  side: z.enum(['buy', 'sell']),
+  quantity: z.number().positive().optional(),
+  notionalUsd: z.number().positive().optional(),
+  hypotheticalPriceUsd: z.number().positive().optional(),
+}).refine((payload) => payload.quantity || payload.notionalUsd, {
+  message: 'quantity or notionalUsd required',
 });
 
 const tradeIntentSchema = z.object({
@@ -203,6 +229,17 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps): Pro
     try {
       const agent = await deps.agentService.register(parse.data);
 
+      // Register webhook if provided
+      if (parse.data.webhookUrl) {
+        deps.webhookService.register(agent.id, parse.data.webhookUrl);
+      }
+
+      eventBus.emit('agent.registered', {
+        agentId: agent.id,
+        name: agent.name,
+        strategyId: agent.strategyId,
+      });
+
       return reply.code(201).send({
         agent: {
           id: agent.id,
@@ -211,6 +248,7 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps): Pro
           startingCapitalUsd: agent.startingCapitalUsd,
           riskLimits: agent.riskLimits,
           strategyId: agent.strategyId,
+          webhookUrl: parse.data.webhookUrl ?? null,
         },
         apiKey: agent.apiKey,
         note: 'Store apiKey securely. It is required for trade-intent API access.',
@@ -311,6 +349,29 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps): Pro
     const auth = resolveAgentFromKey(request, reply, deps.agentService);
     if (!auth) return;
 
+    // Rate limit check
+    const rateResult = deps.rateLimiter.check(auth.id);
+    if (!rateResult.allowed) {
+      await deps.store.transaction((state) => {
+        state.metrics.rateLimitDenials += 1;
+        return undefined;
+      });
+
+      return reply
+        .code(429)
+        .header('Retry-After', String(rateResult.retryAfterSeconds))
+        .header('X-RateLimit-Limit', String(rateResult.limit))
+        .header('X-RateLimit-Remaining', '0')
+        .send(toErrorEnvelope(
+          ErrorCode.RateLimited,
+          'Rate limit exceeded for trade intent submission.',
+          {
+            retryAfterSeconds: rateResult.retryAfterSeconds,
+            limit: rateResult.limit,
+          },
+        ));
+    }
+
     const parse = tradeIntentSchema.safeParse(request.body);
     if (!parse.success) {
       return reply.code(400).send(toErrorEnvelope(
@@ -355,6 +416,16 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps): Pro
       }, {
         idempotencyKey,
       });
+
+      if (!result.replayed) {
+        eventBus.emit('intent.created', {
+          intentId: result.intent.id,
+          agentId: result.intent.agentId,
+          symbol: result.intent.symbol,
+          side: result.intent.side,
+          notionalUsd: result.intent.notionalUsd,
+        });
+      }
 
       return reply.code(result.replayed ? 200 : 202).send({
         message: result.replayed ? 'intent_replayed' : 'intent_queued',
@@ -432,7 +503,13 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps): Pro
       ));
     }
 
-    await deps.executionService.setMarketPrice(parse.data.symbol.toUpperCase(), parse.data.priceUsd);
+    const normalizedSymbol = parse.data.symbol.toUpperCase();
+    await deps.executionService.setMarketPrice(normalizedSymbol, parse.data.priceUsd);
+
+    eventBus.emit('price.updated', {
+      symbol: normalizedSymbol,
+      priceUsd: parse.data.priceUsd,
+    });
 
     return {
       ok: true,
@@ -452,6 +529,7 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps): Pro
       processPid: runtime.processPid,
       defaultMode: deps.config.trading.defaultMode,
       liveModeEnabled: deps.config.trading.liveEnabled,
+      wsClients: connectedClients(),
       stateSummary: {
         agents: Object.keys(state.agents).length,
         intents: Object.keys(state.tradeIntents).length,
@@ -580,6 +658,167 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps): Pro
       skills: deps.skillRegistry.getAgentSkills(agentId),
     };
   });
+
+  // ─── Squad / Coordination endpoints ────────────────────────────────
+
+  const createSquadSchema = z.object({
+    name: z.string().min(2).max(120),
+    leaderId: z.string().min(2),
+    sharedLimits: z.object({
+      maxSquadExposureUsd: z.number().positive().optional(),
+      maxMemberPositionPct: z.number().positive().max(1).optional(),
+    }).optional(),
+  });
+
+  app.post('/squads', async (request, reply) => {
+    const parse = createSquadSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid request payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    try {
+      const squad = deps.coordinationService.createSquad(parse.data);
+      return reply.code(201).send({ squad });
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  app.get('/squads', async () => ({
+    squads: deps.coordinationService.listSquads(),
+  }));
+
+  app.get('/squads/:id', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const squad = deps.coordinationService.getSquad(id);
+    if (!squad) {
+      return reply.code(404).send(toErrorEnvelope(ErrorCode.SquadNotFound, 'Squad not found.'));
+    }
+    return { squad };
+  });
+
+  const joinSquadSchema = z.object({
+    agentId: z.string().min(2),
+  });
+
+  app.post('/squads/:id/join', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const parse = joinSquadSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid request payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    try {
+      const squad = deps.coordinationService.joinSquad(id, parse.data);
+      return { squad };
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  app.get('/squads/:id/positions', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    try {
+      const positions = deps.coordinationService.getSquadPositions(id);
+      return { squadId: id, positions };
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  // ─── Analytics endpoint ────────────────────────────────────────────
+
+  app.get('/agents/:agentId/analytics', async (request, reply) => {
+    const { agentId } = request.params as { agentId: string };
+    const analytics = deps.analyticsService.computeAnalytics(agentId);
+    if (!analytics) {
+      return reply.code(404).send(toErrorEnvelope(ErrorCode.AgentNotFound, 'Agent not found.'));
+    }
+    return analytics;
+  });
+
+  // ─── Simulation endpoint ─────────────────────────────────────────────
+
+  app.post('/simulate', async (request, reply) => {
+    const parse = simulateSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid simulation payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    try {
+      const result = deps.simulationService.simulate({
+        ...parse.data,
+        symbol: parse.data.symbol.toUpperCase(),
+      });
+
+      await deps.store.transaction((state) => {
+        state.metrics.simulationsRun += 1;
+        return undefined;
+      });
+
+      return result;
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  // ─── Pipeline introspection endpoint ───────────────────────────────────
+
+  app.get('/executions/:id/pipeline', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const pipeline = deps.stagedPipeline.getPipeline(id);
+
+    if (!pipeline) {
+      return reply.code(404).send(toErrorEnvelope(
+        ErrorCode.PipelineNotFound,
+        'Execution pipeline not found.',
+      ));
+    }
+
+    return { pipeline };
+  });
+
+  // ─── Webhook delivery history endpoint ─────────────────────────────────
+
+  app.get('/agents/:agentId/webhook-deliveries', async (request, reply) => {
+    const { agentId } = request.params as { agentId: string };
+    const agent = deps.agentService.getById(agentId);
+    if (!agent) {
+      return reply.code(404).send(toErrorEnvelope(ErrorCode.AgentNotFound, 'Agent not found.'));
+    }
+
+    const query = request.query as { limit?: string };
+    const limit = Math.min(Math.max(Number(query.limit ?? 50), 1), 200);
+
+    return {
+      agentId,
+      deliveries: deps.webhookService.getDeliveries(agentId, limit),
+    };
+  });
+
+  // ─── Rate limiter metrics endpoint ─────────────────────────────────────
+
+  app.get('/rate-limit/metrics', async () => deps.rateLimiter.getMetrics());
+
+  // ─── Pipeline stage metrics endpoint ───────────────────────────────────
+
+  app.get('/pipeline/metrics', async () => deps.stagedPipeline.getGlobalStageMetrics());
 
   app.get('/state', async () => deps.store.snapshot());
 }
