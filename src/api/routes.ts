@@ -105,6 +105,7 @@ interface RouteDeps {
   timeframeService: TimeframeService;
   notificationService: NotificationService;
   sentimentService: SentimentService;
+  sandboxService: SandboxService;
   getRuntimeMetrics: () => RuntimeMetrics;
 }
 
