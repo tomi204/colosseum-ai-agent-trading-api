@@ -2,8 +2,8 @@
 
 **The complete autonomous DeFi infrastructure for AI agents on Solana — trading, arbitrage, lending, backtesting, multi-agent coordination, and a strategy marketplace.**
 
-[![Tests](https://img.shields.io/badge/tests-175%20passing-brightgreen)](#tests)
-[![Test Files](https://img.shields.io/badge/test%20files-31-blue)](#tests)
+[![Tests](https://img.shields.io/badge/tests-267%20passing-brightgreen)](#tests)
+[![Test Files](https://img.shields.io/badge/test%20files-39-blue)](#tests)
 [![Live on Mainnet](https://img.shields.io/badge/mainnet-2%20live%20txs-blue)](https://solscan.io/tx/5qZERks6yv1Rjhm5wHvuLRt36nofPrgrCdmeFP5xbVwkGoj4sAubdnXo6MoZUS3XsxYECcgL7ENBdMkoMjmx8kG7)
 [![Live Demo](https://img.shields.io/badge/demo-live-green)](https://colosseum-ai-agent-trading-api.onrender.com/health)
 [![SDK](https://img.shields.io/badge/SDK-TypeScript-blue)](#sdk)
@@ -206,7 +206,7 @@ Proves in one run: agent registration → trade execution → risk rejection →
 ### Run the Test Suite
 
 ```bash
-npm test    # 175 tests across 31 files, all passing
+npm test    # 267 tests across 39 files, all passing
 ```
 
 ---
@@ -410,7 +410,7 @@ src/
 - **Blockchain:** Solana (`@solana/web3.js`)
 - **DEX Routing:** Jupiter lite-api (`jup.ag`)
 - **Validation:** Zod
-- **Testing:** Vitest (175 tests, 31 files)
+- **Testing:** Vitest (267 tests, 39 files)
 - **Persistence:** JSON state file + NDJSON event log
 - **Deployment:** Docker (multi-stage alpine) + Railway/Fly.io configs
 
