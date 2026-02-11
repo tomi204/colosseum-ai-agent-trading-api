@@ -25,6 +25,8 @@ export const ErrorCode = {
   OrderNotFound: 'order_not_found',
   RecommendationNotFound: 'recommendation_not_found',
   TournamentNotFound: 'tournament_not_found',
+  SubscriptionNotFound: 'subscription_not_found',
+  SandboxNotFound: 'sandbox_not_found',
   InternalError: 'internal_error',
 } as const;
 

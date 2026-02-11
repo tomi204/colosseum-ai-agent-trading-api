@@ -48,6 +48,10 @@ import { ImprovementLoopService } from './services/improvementLoopService.js';
 import { TournamentService } from './services/tournamentService.js';
 import { SocialTradingService } from './services/socialTradingService.js';
 import { PythOracleService } from './services/pythOracleService.js';
+import { BenchmarkService } from './services/benchmarkService.js';
+import { TimeframeService } from './services/timeframeService.js';
+import { NotificationService } from './services/notificationService.js';
+import { SentimentService } from './services/sentimentService.js';
 import { RateLimiter } from './api/rateLimiter.js';
 import { StagedPipeline } from './domain/execution/stagedPipeline.js';
 
@@ -142,6 +146,13 @@ export async function buildApp(config: AppConfig): Promise<AppContext> {
   const tournamentService = new TournamentService(stateStore, backtestService);
   const socialTradingService = new SocialTradingService(stateStore);
   const pythOracleService = new PythOracleService(stateStore, executionService);
+  const benchmarkService = new BenchmarkService(stateStore);
+  const timeframeService = new TimeframeService(stateStore);
+  const notificationService = new NotificationService(stateStore);
+  const sentimentService = new SentimentService(stateStore);
+
+  // Start notification listener
+  notificationService.startListening();
 
   // Start listeners for trade history and diagnostics
   tradeHistoryService.startListening();
@@ -201,6 +212,10 @@ export async function buildApp(config: AppConfig): Promise<AppContext> {
     tournamentService,
     socialTradingService,
     pythOracleService,
+    benchmarkService,
+    timeframeService,
+    notificationService,
+    sentimentService,
     x402Policy,
     getRuntimeMetrics: () => {
       const state = stateStore.snapshot();

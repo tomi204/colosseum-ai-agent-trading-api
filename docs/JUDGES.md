@@ -185,10 +185,10 @@ curl -s -X POST http://localhost:8787/simulate \
 ## 3) Test Suite
 
 ```bash
-npm test   # 356 tests across 45 files, all passing
+npm test   # 410+ tests across 48+ files, all passing
 ```
 
-Covers: risk engine, fee engine, receipt engine, 5 strategies, idempotency, arbitrage, DCA, backtesting, marketplace, squads, governance, reputation, simulation, webhooks, rate limiting, order book, pipeline, analytics, copy trading, credit ratings, self-improvement, inference budget, watchlist, trade history, diagnostics, and more.
+Covers: risk engine, fee engine, receipt engine, 5 strategies, idempotency, arbitrage, DCA, backtesting, marketplace, squads, governance, reputation, simulation, webhooks, rate limiting, order book, pipeline, analytics, copy trading, credit ratings, self-improvement, inference budget, watchlist, trade history, diagnostics, strategy tournaments, social trading, Pyth oracle, sandbox scenarios, benchmarks, sentiment analysis, notifications, and more.
 
 ---
 
@@ -205,7 +205,9 @@ Covers: risk engine, fee engine, receipt engine, 5 strategies, idempotency, arbi
 | **Reliability** | Idempotent ingestion, rate limiting, webhook delivery, WebSocket live feed. |
 | **Privacy** | AES-256-GCM encrypted intents + redacted receipts with hash chain integrity. |
 | **Self-Improving** | Trading profits fund AI inference that auto-tunes strategies — a closed-loop flywheel. No other project has this. |
-| **Proven** | 2 live mainnet transactions + public demo + 356 automated tests across 45 files. |
+| **Solana-Native** | Pyth Network oracle for real-time Solana price feeds. Jupiter swaps. On-chain proof anchoring. |
+| **Social** | Social trading graph, strategy tournaments, copy trading, activity feeds. |
+| **Proven** | 2 live mainnet transactions + interactive live demo + 410+ automated tests across 48+ files. |
 | **SDK** | Zero-dep TypeScript client with 15 methods — agents can integrate in minutes. |
 
 ---
@@ -223,4 +225,4 @@ Agent → API Gateway (auth + rate limit + idempotency)
      → Analytics + Reputation
 ```
 
-**80+ source files · ~16,000 lines · 356 tests · 2 mainnet transactions · live on Render**
+**90+ source files · ~20,000 lines · 410+ tests · 2 mainnet transactions · live on Render**

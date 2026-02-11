@@ -34,7 +34,9 @@ export type EventType =
   | 'tournament.completed'
   | 'social.followed'
   | 'social.unfollowed'
-  | 'pyth.price.updated';
+  | 'pyth.price.updated'
+  | 'sandbox.created'
+  | 'sandbox.completed';
 
 export type EventCallback = (event: EventType, data: unknown) => void;
 

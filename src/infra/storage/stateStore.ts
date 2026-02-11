@@ -178,6 +178,7 @@ const normalizeState = (raw: unknown): AppState => {
       lastScanAt: (parsed as Partial<AppState>).lending?.lastScanAt ?? null,
     },
     tournaments: parsed.tournaments ?? {},
+    sandboxes: parsed.sandboxes ?? {},
   };
 };
 

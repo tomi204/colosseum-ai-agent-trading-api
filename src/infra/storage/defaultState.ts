@@ -62,5 +62,6 @@ export const createDefaultState = (): AppState => {
       lastScanAt: null,
     },
     tournaments: {},
+    sandboxes: {},
   };
 };

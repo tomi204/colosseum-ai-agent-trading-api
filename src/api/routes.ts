@@ -48,6 +48,10 @@ import { ImprovementLoopService } from '../services/improvementLoopService.js';
 import { TournamentService } from '../services/tournamentService.js';
 import { SocialTradingService } from '../services/socialTradingService.js';
 import { PythOracleService } from '../services/pythOracleService.js';
+import { BenchmarkService } from '../services/benchmarkService.js';
+import { TimeframeService } from '../services/timeframeService.js';
+import { NotificationService, subscribeSchema as notificationSubscribeSchema } from '../services/notificationService.js';
+import { SentimentService } from '../services/sentimentService.js';
 import { RateLimiter } from './rateLimiter.js';
 import { StagedPipeline } from '../domain/execution/stagedPipeline.js';
 import { RuntimeMetrics } from '../types.js';
@@ -97,6 +101,10 @@ interface RouteDeps {
   tournamentService: TournamentService;
   socialTradingService: SocialTradingService;
   pythOracleService: PythOracleService;
+  benchmarkService: BenchmarkService;
+  timeframeService: TimeframeService;
+  notificationService: NotificationService;
+  sentimentService: SentimentService;
   getRuntimeMetrics: () => RuntimeMetrics;
 }
 
@@ -1820,6 +1828,146 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps): Pro
     const query = request.query as { limit?: string };
     const limit = query.limit ? Math.min(Math.max(Number(query.limit), 1), 200) : 50;
     return { feed: deps.socialTradingService.getFeed(agentId, limit) };
+  });
+
+  // ─── Notification / Webhook Subscription endpoints ──────────────────────
+
+  app.post('/agents/:agentId/notifications/subscribe', async (request, reply) => {
+    const { agentId } = request.params as { agentId: string };
+    const parse = notificationSubscribeSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid subscription payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    try {
+      const subscription = deps.notificationService.subscribe(
+        agentId,
+        parse.data.eventType,
+        parse.data.webhookUrl,
+      );
+      return reply.code(201).send({ subscription });
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  app.delete('/agents/:agentId/notifications/:subId', async (request, reply) => {
+    const { agentId, subId } = request.params as { agentId: string; subId: string };
+    try {
+      return deps.notificationService.unsubscribe(agentId, subId);
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  app.get('/agents/:agentId/notifications', async (request) => {
+    const { agentId } = request.params as { agentId: string };
+    return {
+      subscriptions: deps.notificationService.listSubscriptions(agentId),
+      stats: deps.notificationService.getDeliveryStats(agentId),
+    };
+  });
+
+  app.get('/agents/:agentId/notifications/log', async (request) => {
+    const { agentId } = request.params as { agentId: string };
+    const query = request.query as { limit?: string };
+    const limit = query.limit ? Math.min(Math.max(Number(query.limit), 1), 200) : 50;
+    return { deliveries: deps.notificationService.getDeliveryLog(agentId, limit) };
+  });
+
+  // ─── Sentiment Analysis endpoints ─────────────────────────────────────
+
+  app.get('/sentiment/:symbol', async (request) => {
+    const { symbol } = request.params as { symbol: string };
+    return deps.sentimentService.analyzeSentiment(symbol);
+  });
+
+  app.get('/sentiment/:symbol/history', async (request) => {
+    const { symbol } = request.params as { symbol: string };
+    const query = request.query as { limit?: string };
+    const limit = query.limit ? Math.min(Math.max(Number(query.limit), 1), 500) : 50;
+    return { history: deps.sentimentService.getSentimentHistory(symbol, limit) };
+  });
+
+  app.get('/sentiment/overview', async () => ({
+    overview: deps.sentimentService.getOverview(),
+  }));
+
+  // ─── Benchmark endpoints ──────────────────────────────────────────────
+
+  app.post('/agents/:agentId/benchmark', async (request, reply) => {
+    const { agentId } = request.params as { agentId: string };
+    try {
+      const benchmark = deps.benchmarkService.runBenchmark(agentId);
+      if (!benchmark) {
+        return reply.code(404).send(toErrorEnvelope(ErrorCode.AgentNotFound, 'Agent not found.'));
+      }
+      return reply.code(201).send({ benchmark });
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  app.get('/agents/:agentId/report', async (request, reply) => {
+    const { agentId } = request.params as { agentId: string };
+    const report = deps.benchmarkService.getAgentReport(agentId);
+    if (!report) {
+      return reply.code(404).send(toErrorEnvelope(ErrorCode.AgentNotFound, 'Agent not found.'));
+    }
+    return report;
+  });
+
+  app.get('/benchmarks', async () => deps.benchmarkService.getSystemBenchmarks());
+
+  // ─── Multi-Timeframe Analysis endpoints ────────────────────────────────
+
+  const timeframeAnalyzeSchema = z.object({
+    symbol: z.string().min(1).max(20),
+    priceHistory: z.array(z.number()).min(1),
+  });
+
+  app.post('/analysis/timeframes', async (request, reply) => {
+    const parse = timeframeAnalyzeSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid timeframe analysis payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    try {
+      const analysis = deps.timeframeService.analyzeTimeframes(parse.data.symbol, parse.data.priceHistory);
+      return reply.code(201).send({ analysis });
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  app.get('/analysis/timeframes/:symbol/signals', async (request, reply) => {
+    const { symbol } = request.params as { symbol: string };
+    const signals = deps.timeframeService.getTimeframeSignals(symbol);
+    if (!signals) {
+      return reply.code(404).send(toErrorEnvelope(ErrorCode.AgentNotFound, `No timeframe analysis found for ${symbol}.`));
+    }
+    return signals;
+  });
+
+  app.get('/analysis/timeframes/:symbol/alignment', async (request, reply) => {
+    const { symbol } = request.params as { symbol: string };
+    const alignment = deps.timeframeService.getTimeframeAlignment(symbol);
+    if (!alignment) {
+      return reply.code(404).send(toErrorEnvelope(ErrorCode.AgentNotFound, `No timeframe analysis found for ${symbol}.`));
+    }
+    return alignment;
   });
 
   app.get('/state', async () => deps.store.snapshot());

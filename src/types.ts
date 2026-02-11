@@ -1,5 +1,6 @@
 import { LendingMonitorState } from './domain/lending/lendingTypes.js';
 import type { Tournament } from './services/tournamentService.js';
+import type { Sandbox } from './services/sandboxService.js';
 
 export type Side = 'buy' | 'sell';
 export type IntentStatus = 'pending' | 'processing' | 'executed' | 'rejected' | 'failed';
@@ -222,6 +223,7 @@ export interface AppState {
   autonomous: AutonomousLoopState;
   lending: LendingMonitorState;
   tournaments: Record<string, Tournament>;
+  sandboxes: Record<string, Sandbox>;
 }
 
 export interface RuntimeMetrics {
