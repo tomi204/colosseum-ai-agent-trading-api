@@ -29,7 +29,11 @@ export type EventType =
   | 'watchlist.removed'
   | 'improve.analyzed'
   | 'improve.applied'
-  | 'improve.cycle';
+  | 'improve.cycle'
+  | 'tournament.created'
+  | 'tournament.completed'
+  | 'social.followed'
+  | 'social.unfollowed';
 
 export type EventCallback = (event: EventType, data: unknown) => void;
 

@@ -45,6 +45,8 @@ import { DiagnosticsService } from './services/diagnosticsService.js';
 import { SelfImproveService } from './services/selfImproveService.js';
 import { InferenceBudgetService } from './services/inferenceBudgetService.js';
 import { ImprovementLoopService } from './services/improvementLoopService.js';
+import { TournamentService } from './services/tournamentService.js';
+import { SocialTradingService } from './services/socialTradingService.js';
 import { RateLimiter } from './api/rateLimiter.js';
 import { StagedPipeline } from './domain/execution/stagedPipeline.js';
 
@@ -136,6 +138,8 @@ export async function buildApp(config: AppConfig): Promise<AppContext> {
   const selfImproveService = new SelfImproveService(stateStore);
   const inferenceBudgetService = new InferenceBudgetService(stateStore);
   const improvementLoopService = new ImprovementLoopService(stateStore, selfImproveService, inferenceBudgetService);
+  const tournamentService = new TournamentService(stateStore, backtestService);
+  const socialTradingService = new SocialTradingService(stateStore);
 
   // Start listeners for trade history and diagnostics
   tradeHistoryService.startListening();
@@ -192,6 +196,8 @@ export async function buildApp(config: AppConfig): Promise<AppContext> {
     selfImproveService,
     inferenceBudgetService,
     improvementLoopService,
+    tournamentService,
+    socialTradingService,
     x402Policy,
     getRuntimeMetrics: () => {
       const state = stateStore.snapshot();

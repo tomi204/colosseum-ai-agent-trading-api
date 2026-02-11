@@ -45,6 +45,8 @@ import { DiagnosticsService } from '../services/diagnosticsService.js';
 import { SelfImproveService } from '../services/selfImproveService.js';
 import { InferenceBudgetService } from '../services/inferenceBudgetService.js';
 import { ImprovementLoopService } from '../services/improvementLoopService.js';
+import { TournamentService } from '../services/tournamentService.js';
+import { SocialTradingService } from '../services/socialTradingService.js';
 import { RateLimiter } from './rateLimiter.js';
 import { StagedPipeline } from '../domain/execution/stagedPipeline.js';
 import { RuntimeMetrics } from '../types.js';
@@ -91,6 +93,8 @@ interface RouteDeps {
   selfImproveService: SelfImproveService;
   inferenceBudgetService: InferenceBudgetService;
   improvementLoopService: ImprovementLoopService;
+  tournamentService: TournamentService;
+  socialTradingService: SocialTradingService;
   getRuntimeMetrics: () => RuntimeMetrics;
 }
 
@@ -1687,6 +1691,100 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps): Pro
   app.get('/agents/:agentId/inference/roi', async (request) => {
     const { agentId } = request.params as { agentId: string };
     return deps.inferenceBudgetService.getROI(agentId);
+  });
+
+  // ─── Tournament endpoints ──────────────────────────────────────────
+
+  const createTournamentSchema = z.object({
+    name: z.string().min(2).max(200),
+    strategyIds: z.array(z.string().min(1)).min(2),
+    symbol: z.string().min(2).max(20).optional(),
+    priceHistory: z.array(z.number()).min(2),
+    startingCapitalUsd: z.number().positive(),
+  });
+
+  app.post('/tournaments', async (request, reply) => {
+    const parse = createTournamentSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid tournament payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    try {
+      const tournament = await deps.tournamentService.createTournament(parse.data);
+      return reply.code(201).send({ tournament });
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  app.post('/tournaments/:id/run', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    try {
+      const tournament = await deps.tournamentService.runTournament(id);
+      return { tournament };
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  app.get('/tournaments/:id', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const tournament = deps.tournamentService.getTournamentResults(id);
+    if (!tournament) {
+      return reply.code(404).send(toErrorEnvelope(ErrorCode.TournamentNotFound, 'Tournament not found.'));
+    }
+    return { tournament };
+  });
+
+  app.get('/tournaments', async () => ({
+    tournaments: deps.tournamentService.listTournaments(),
+  }));
+
+  // ─── Social Trading endpoints ─────────────────────────────────────
+
+  app.post('/agents/:agentId/social/follow/:targetId', async (request, reply) => {
+    const { agentId, targetId } = request.params as { agentId: string; targetId: string };
+    try {
+      const relation = deps.socialTradingService.followAgent(agentId, targetId);
+      return reply.code(201).send({ relation });
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  app.delete('/agents/:agentId/social/follow/:targetId', async (request, reply) => {
+    const { agentId, targetId } = request.params as { agentId: string; targetId: string };
+    try {
+      const result = deps.socialTradingService.unfollowAgent(agentId, targetId);
+      return result;
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  app.get('/agents/:agentId/social/followers', async (request) => {
+    const { agentId } = request.params as { agentId: string };
+    return { followers: deps.socialTradingService.getFollowers(agentId) };
+  });
+
+  app.get('/agents/:agentId/social/following', async (request) => {
+    const { agentId } = request.params as { agentId: string };
+    return { following: deps.socialTradingService.getFollowing(agentId) };
+  });
+
+  app.get('/agents/:agentId/social/feed', async (request) => {
+    const { agentId } = request.params as { agentId: string };
+    const query = request.query as { limit?: string };
+    const limit = query.limit ? Math.min(Math.max(Number(query.limit), 1), 200) : 50;
+    return { feed: deps.socialTradingService.getFeed(agentId, limit) };
   });
 
   app.get('/state', async () => deps.store.snapshot());

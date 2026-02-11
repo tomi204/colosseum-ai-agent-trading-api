@@ -61,5 +61,6 @@ export const createDefaultState = (): AppState => {
       alerts: {},
       lastScanAt: null,
     },
+    tournaments: {},
   };
 };

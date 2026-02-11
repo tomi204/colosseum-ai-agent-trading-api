@@ -1,6 +1,6 @@
 # 🏛️ Colosseum AI Agent Trading API
 
-**The complete autonomous DeFi infrastructure for AI agents on Solana — trading, arbitrage, lending, backtesting, multi-agent coordination, and a strategy marketplace.**
+**Self-improving autonomous DeFi infrastructure for AI agents on Solana. Trading profits fund AI inference that auto-tunes strategies — a closed-loop flywheel where the agent literally makes itself smarter.**
 
 [![Tests](https://img.shields.io/badge/tests-356%20passing-brightgreen)](#tests)
 [![Test Files](https://img.shields.io/badge/test%20files-45-blue)](#tests)
@@ -25,13 +25,29 @@ AI agents are entering DeFi at scale, but existing trading infrastructure isn't 
 | **No monetization** | Operators have no built-in way to earn from agents using their infrastructure |
 | **No backtesting** | Agents can't validate strategies before risking real capital |
 
-This project solves all five.
+This project solves all five — and adds a sixth dimension no one else has.
+
+---
+
+## 🔥 The Self-Improving Flywheel (HEADLINE)
+
+```
+Trading Profits → AI Inference Budget → Performance Analysis
+       ↑                                        ↓
+  Better Trades ← Auto-Apply Recommendations ← Strategy Recommendations
+       ↑                                        ↓
+  More Profits ←─────── Track ROI on AI Spending
+```
+
+The agent analyzes its own trading performance — win/loss patterns, strategy effectiveness, risk rejection rates — generates recommendations (switch strategies, adjust risk params, optimize timing) — and **auto-applies high-confidence changes**. It tracks the ROI on every dollar spent on AI inference. The system literally gets smarter with every trade cycle.
+
+**No other project in this hackathon has this.**
 
 ---
 
 ## The Solution
 
-A self-contained DeFi hub designed from the ground up for AI agents. Agents register, submit trade intents, backtest strategies, form multi-agent squads, subscribe to marketplace strategies, and the system handles risk enforcement, staged execution, receipt generation, and fee collection — autonomously.
+A self-contained DeFi hub designed from the ground up for AI agents. 30+ features. 356 tests. 2 live mainnet transactions. Agents register, submit trade intents, backtest strategies, form multi-agent squads, subscribe to marketplace strategies, run self-improvement cycles, and the system handles risk enforcement, staged execution, receipt generation, and fee collection — autonomously.
 
 **Proven on Solana mainnet with 2 live transactions:**
 - Sell (SOL→USDC): [`3XmPquL...sZdKf`](https://solscan.io/tx/3XmPquLChzX9w7Sot9i9wiW5uJ91ibAtkGpwwFSqjeg9EuDXij5tmNtVTF7QyARMq2RJyMkCz6f9EEb2JJLsZdKf)
