@@ -81,6 +81,16 @@ curl -s http://localhost:8787/executions/<EXECUTION_ID>/receipt
 curl -s http://localhost:8787/receipts/verify/<EXECUTION_ID>
 ```
 
+### Token revenue integration health (Clawpump)
+
+```bash
+curl -s http://localhost:8787/integrations/clawpump/health
+curl -s 'http://localhost:8787/integrations/clawpump/earnings?agentId=<AGENT_ID>'
+curl -s http://localhost:8787/integrations/clawpump/launch-attempts
+```
+
+If upstream is degraded, the API returns structured integration errors (with status/action hints) instead of opaque failures.
+
 ---
 
 ## 3) Why this is judge-relevant

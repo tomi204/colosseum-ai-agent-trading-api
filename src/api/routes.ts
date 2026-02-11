@@ -9,6 +9,7 @@ import { StateStore } from '../infra/storage/stateStore.js';
 import { AgentService } from '../services/agentService.js';
 import { resolveAgentFromKey } from '../services/auth.js';
 import { ExecutionService } from '../services/executionService.js';
+import { TokenRevenueService } from '../services/tokenRevenueService.js';
 import { TradeIntentService } from '../services/tradeIntentService.js';
 import { X402Policy } from '../services/x402Policy.js';
 import { RuntimeMetrics } from '../types.js';
@@ -21,6 +22,7 @@ interface RouteDeps {
   executionService: ExecutionService;
   feeEngine: FeeEngine;
   strategyRegistry: StrategyRegistry;
+  tokenRevenueService: TokenRevenueService;
   x402Policy: X402Policy;
   getRuntimeMetrics: () => RuntimeMetrics;
 }
@@ -58,6 +60,20 @@ const marketUpdateSchema = z.object({
 
 const strategyUpdateSchema = z.object({
   strategyId: z.enum(['momentum-v1', 'mean-reversion-v1']),
+});
+
+const clawpumpLaunchSchema = z.object({
+  name: z.string().min(2).max(80),
+  symbol: z.string().min(2).max(12).transform((value) => value.toUpperCase()),
+  description: z.string().min(10).max(280),
+  website: z.string().url().optional(),
+  twitter: z.string().url().optional(),
+  telegram: z.string().url().optional(),
+  imagePath: z.string().min(1).max(512).optional(),
+});
+
+const clawpumpEarningsQuerySchema = z.object({
+  agentId: z.string().min(2),
 });
 
 const sendDomainError = (reply: FastifyReply, error: unknown): void => {
@@ -109,6 +125,61 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps): Pro
   }));
 
   app.get('/paid-plan/policy', async () => deps.x402Policy);
+
+  app.get('/integrations/clawpump/health', async (_request, reply) => {
+    try {
+      return await deps.tokenRevenueService.health();
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  app.get('/integrations/clawpump/earnings', async (request, reply) => {
+    const parse = clawpumpEarningsQuerySchema.safeParse(request.query);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid query params.',
+        parse.error.flatten(),
+      ));
+    }
+
+    try {
+      return await deps.tokenRevenueService.earnings(parse.data.agentId);
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  app.post('/integrations/clawpump/launch', async (request, reply) => {
+    const parse = clawpumpLaunchSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid request payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    try {
+      const launched = await deps.tokenRevenueService.launch(parse.data);
+      return reply.code(201).send(launched);
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  app.get('/integrations/clawpump/launch-attempts', async (request) => {
+    const query = request.query as { limit?: string };
+    const limit = Math.min(Math.max(Number(query.limit ?? 20), 1), 200);
+
+    return {
+      attempts: deps.tokenRevenueService.listLaunchAttempts(limit),
+    };
+  });
 
   app.post('/agents/register', async (request, reply) => {
     const parse = registerAgentSchema.safeParse(request.body);

@@ -5,9 +5,11 @@ import { FeeEngine } from './domain/fee/feeEngine.js';
 import { StrategyRegistry } from './domain/strategy/strategyRegistry.js';
 import { EventLogger } from './infra/logger.js';
 import { StateStore } from './infra/storage/stateStore.js';
+import { ClawpumpClient } from './integrations/clawpump/client.js';
 import { AgentService } from './services/agentService.js';
 import { ExecutionService } from './services/executionService.js';
 import { x402PaymentGate } from './services/paymentGate.js';
+import { TokenRevenueService } from './services/tokenRevenueService.js';
 import { TradeIntentService } from './services/tradeIntentService.js';
 import { ExecutionWorker } from './services/worker.js';
 import { loadX402Policy } from './services/x402Policy.js';
@@ -35,6 +37,16 @@ export async function buildApp(config: AppConfig): Promise<AppContext> {
   const agentService = new AgentService(stateStore, config, strategyRegistry);
   const intentService = new TradeIntentService(stateStore);
   const executionService = new ExecutionService(stateStore, logger, feeEngine, config);
+  const clawpumpClient = new ClawpumpClient({
+    baseUrl: config.tokenRevenue.baseUrl,
+    apiKey: config.tokenRevenue.apiKey,
+    timeoutMs: config.tokenRevenue.timeoutMs,
+    healthPath: config.tokenRevenue.healthPath,
+    launchPath: config.tokenRevenue.launchPath,
+    earningsPath: config.tokenRevenue.earningsPath,
+    maxImageBytes: config.tokenRevenue.maxImageBytes,
+  });
+  const tokenRevenueService = new TokenRevenueService(stateStore, logger, clawpumpClient, config);
 
   const worker = new ExecutionWorker(
     stateStore,
@@ -56,6 +68,7 @@ export async function buildApp(config: AppConfig): Promise<AppContext> {
     executionService,
     feeEngine,
     strategyRegistry,
+    tokenRevenueService,
     x402Policy,
     getRuntimeMetrics: () => {
       const state = stateStore.snapshot();

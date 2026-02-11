@@ -135,6 +135,29 @@ export interface TreasuryState {
   entries: TreasuryEntry[];
 }
 
+export interface ClawpumpLaunchAttempt {
+  id: string;
+  ts: string;
+  status: 'success' | 'failed';
+  request: {
+    name: string;
+    symbol: string;
+    description: string;
+    website?: string;
+    twitter?: string;
+    telegram?: string;
+    imagePath?: string;
+  };
+  walletAddress: string;
+  errorCode?: string;
+  errorMessage?: string;
+  errorDetails?: Record<string, unknown>;
+}
+
+export interface TokenRevenueState {
+  clawpumpLaunchAttempts: ClawpumpLaunchAttempt[];
+}
+
 export interface RiskDecision {
   approved: boolean;
   reason?: string;
@@ -165,6 +188,7 @@ export interface AppState {
   latestReceiptHash?: string;
   idempotencyRecords: Record<string, IdempotencyRecord>;
   treasury: TreasuryState;
+  tokenRevenue: TokenRevenueState;
   marketPricesUsd: Record<string, number>;
   marketPriceHistoryUsd: Record<string, MarketPricePoint[]>;
   metrics: MetricsState;

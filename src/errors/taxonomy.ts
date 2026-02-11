@@ -10,6 +10,9 @@ export const ErrorCode = {
   ReceiptNotFound: 'receipt_not_found',
   IdempotencyKeyConflict: 'idempotency_key_conflict',
   PaymentRequired: 'payment_required',
+  IntegrationMisconfigured: 'integration_misconfigured',
+  IntegrationUnavailable: 'integration_unavailable',
+  UpstreamRateLimited: 'upstream_rate_limited',
   InternalError: 'internal_error',
 } as const;
 

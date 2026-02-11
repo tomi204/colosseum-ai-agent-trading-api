@@ -66,6 +66,16 @@ export const config = {
     x402RequiredPaths: (process.env.X402_REQUIRED_PATHS ?? '/trade-intents').split(',').map((s) => s.trim()),
     x402PolicyFile: process.env.X402_POLICY_FILE ?? path.resolve(process.cwd(), 'config', 'x402-policy.json'),
   },
+  tokenRevenue: {
+    baseUrl: process.env.CLAWPUMP_BASE_URL ?? 'https://www.clawpump.tech',
+    apiKey: process.env.CLAWPUMP_API_KEY,
+    healthPath: process.env.CLAWPUMP_HEALTH_PATH ?? '/api/health',
+    launchPath: process.env.CLAWPUMP_LAUNCH_PATH ?? '/api/agents/launch',
+    earningsPath: process.env.CLAWPUMP_EARNINGS_PATH ?? '/api/agents/earnings',
+    timeoutMs: parseNumber(process.env.CLAWPUMP_TIMEOUT_MS, 12000),
+    maxImageBytes: parseNumber(process.env.CLAWPUMP_MAX_IMAGE_BYTES, 2_000_000),
+    launchAttemptHistoryLimit: parseNumber(process.env.CLAWPUMP_LAUNCH_HISTORY_LIMIT, 200),
+  },
 };
 
 export type AppConfig = typeof config;

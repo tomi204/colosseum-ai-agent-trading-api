@@ -159,6 +159,9 @@ const normalizeState = (raw: unknown): AppState => {
     executionReceipts,
     idempotencyRecords,
     marketPriceHistoryUsd: parsed.marketPriceHistoryUsd ?? defaults.marketPriceHistoryUsd,
+    tokenRevenue: {
+      clawpumpLaunchAttempts: parsed.tokenRevenue?.clawpumpLaunchAttempts ?? defaults.tokenRevenue.clawpumpLaunchAttempts,
+    },
     metrics: {
       ...defaults.metrics,
       ...(parsed.metrics ?? {}),

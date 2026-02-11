@@ -21,6 +21,9 @@ export const createDefaultState = (): AppState => {
       totalFeesUsd: 0,
       entries: [],
     },
+    tokenRevenue: {
+      clawpumpLaunchAttempts: [],
+    },
     marketPricesUsd: {
       ...defaultMarketPricesUsd,
     },

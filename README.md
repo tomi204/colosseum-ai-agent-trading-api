@@ -1,58 +1,47 @@
-# Colosseum AI Agent Trading API (v3)
+# Colosseum AI Agent Trading API (v4)
 
-Autonomous, agent-facing trading API upgraded for Colosseum judging.
+Autonomous, agent-facing Solana trading API built for Colosseum judging.
 
-## What is new in v3
+## What this ships
 
-### 1) Verifiable execution receipts (judge-facing trust primitive)
+- Autonomous intent processing worker (`/trade-intents` queue)
+- Safety-first risk engine (position, order, drawdown, cooldown limits)
+- Strategy plugins (momentum + mean-reversion)
+- Verifiable execution receipts + deterministic verification
+- Idempotent intent ingestion (`x-idempotency-key`)
+- Treasury fee accounting + monetization telemetry
+- x402 paid-route policy model
+- Live judge dashboard at `/experiment`
+- Clawpump token-revenue integration endpoints with robust error mapping
 
-- Deterministic receipt hash per execution
-- Hash chaining via previous receipt hash
-- Signature payload for independent verification
-- API endpoints:
-  - `GET /executions/:executionId/receipt`
-  - `GET /receipts/verify/:executionId`
+## Key endpoints
 
-### 2) Risk telemetry endpoint (standardized observability)
+### Core trading
+- `POST /agents/register`
+- `PATCH /agents/:agentId/strategy`
+- `POST /trade-intents`
+- `GET /trade-intents/:intentId`
+- `GET /executions`
 
-- API endpoints:
-  - `GET /agents/:agentId/risk`
-  - `GET /agents/:agentId/risk-telemetry` (alias)
-- Metrics include:
-  - drawdown
-  - gross exposure
-  - realized + daily pnl
-  - reject counters (agent + global)
-  - cooldown state
+### Trust / verification
+- `GET /executions/:executionId/receipt`
+- `GET /receipts/verify/:executionId`
 
-### 3) Strategy plugin interface + switchable per-agent strategy
+### Risk / observability
+- `GET /agents/:agentId/risk`
+- `GET /metrics`
+- `GET /experiment`
 
-- Plugin registry in `src/domain/strategy/`
-- Included strategies:
-  - `momentum-v1`
-  - `mean-reversion-v1`
-- Agent strategy change:
-  - `PATCH /agents/:agentId/strategy`
-- Strategy catalog:
-  - `GET /strategies`
+### Monetization / policy
+- `GET /paid-plan/policy`
 
-### 4) Production hardening
+### Token revenue integration (Clawpump)
+- `GET /integrations/clawpump/health`
+- `GET /integrations/clawpump/earnings?agentId=...`
+- `POST /integrations/clawpump/launch`
+- `GET /integrations/clawpump/launch-attempts`
 
-- Trade intent idempotency:
-  - `x-idempotency-key` / `idempotency-key`
-- Live quote retry/backoff
-- Structured error taxonomy (`src/errors/taxonomy.ts`)
-
-### 5) Monetization polish
-
-- x402 policy file: `config/x402-policy.json`
-- Policy-aware gate middleware
-- Policy endpoint: `GET /paid-plan/policy`
-- Paid policy details also surfaced in `/metrics`
-
----
-
-## Quick local run
+## Quick start
 
 ```bash
 npm install
@@ -60,31 +49,22 @@ cp .env.example .env
 npm run dev
 ```
 
-Default base URL: `http://localhost:8787`
+Default URL: `http://localhost:8787`
 
-## 2-minute judging demo
+## Judge flow (recommended)
 
 ```bash
 bash scripts/demo-judge.sh
 ```
 
-This demonstrates in one run:
-- risk rejection
-- successful execution
+This demo proves in one run:
+- successful trade execution
+- risk rejection behavior
 - receipt retrieval + verification
-- fee accrual in treasury
+- fee accrual into treasury
+- risk telemetry exposure
 
-See `docs/JUDGES.md` for exact manual curl commands.
-
----
-
-## Colosseum-skill compliance artifacts
-
-- `docs/COLOSSEUM_WORKFLOW.md` — project create/update/submit + forum/vote cadence
-- `docs/HEARTBEAT_INTEGRATION_NOTES.md` — heartbeat integration plan
-- `docs/COLOSSEUM_SKILL_CHECKLIST.md` — requirement mapping + blockers
-
----
+See `docs/JUDGES.md` for manual checks.
 
 ## Tests
 
@@ -92,8 +72,4 @@ See `docs/JUDGES.md` for exact manual curl commands.
 npm test
 ```
 
-Covers:
-- risk and fee engines
-- receipt hashing/verification
-- strategy behavior
-- idempotency behavior (service + API)
+Current suite validates risk, fees, receipts, strategies, idempotency, experiment route, and Clawpump integration mapping/wallet logic.
