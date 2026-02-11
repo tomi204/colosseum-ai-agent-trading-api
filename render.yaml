@@ -7,8 +7,6 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
-      - key: PORT
-        value: "8787"
       - key: LIVE_TRADING_ENABLED
         value: "false"
       - key: JUPITER_PLATFORM_FEE_BPS
