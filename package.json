@@ -4,6 +4,11 @@
   "description": "Autonomous AI-agent trading API MVP for the Colosseum Agent Hackathon",
   "type": "module",
   "main": "dist/index.js",
+  "exports": {
+    ".": "./dist/index.js",
+    "./sdk": "./dist/sdk/index.js",
+    "./sdk/*": "./dist/sdk/*"
+  },
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.json",
