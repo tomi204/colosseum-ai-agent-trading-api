@@ -26,6 +26,9 @@ import { ArbitrageService } from '../services/arbitrageService.js';
 import { ReputationService } from '../services/reputationService.js';
 import { ProofAnchorService } from '../services/proofAnchorService.js';
 import { GovernanceService } from '../services/governanceService.js';
+import { OrderBookService } from '../services/orderBookService.js';
+import { BacktestService } from '../services/backtestService.js';
+import { MarketplaceService } from '../services/marketplaceService.js';
 import { RateLimiter } from './rateLimiter.js';
 import { StagedPipeline } from '../domain/execution/stagedPipeline.js';
 import { RuntimeMetrics } from '../types.js';
@@ -53,6 +56,9 @@ interface RouteDeps {
   reputationService: ReputationService;
   proofAnchorService: ProofAnchorService;
   governanceService: GovernanceService;
+  orderBookService: OrderBookService;
+  backtestService: BacktestService;
+  marketplaceService: MarketplaceService;
   getRuntimeMetrics: () => RuntimeMetrics;
 }
 
@@ -936,6 +942,123 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps): Pro
       : undefined;
 
     return { proposals: deps.governanceService.listProposals(statusFilter) };
+  });
+
+  // ─── Order Book endpoints ──────────────────────────────────────────
+
+  app.get('/orderbook/:symbol', async (request) => {
+    const { symbol } = request.params as { symbol: string };
+    return deps.orderBookService.getDepth(symbol);
+  });
+
+  app.get('/orderbook/flow', async () => deps.orderBookService.getFlow());
+
+  // ─── Backtest endpoint ────────────────────────────────────────────
+
+  const backtestSchema = z.object({
+    strategyId: z.string().min(1),
+    symbol: z.string().min(2).max(20),
+    priceHistory: z.array(z.number()),
+    startingCapitalUsd: z.number().positive(),
+    riskOverrides: z.object({
+      maxPositionSizePct: z.number().positive().max(1).optional(),
+      maxOrderNotionalUsd: z.number().positive().optional(),
+      maxGrossExposureUsd: z.number().positive().optional(),
+      dailyLossCapUsd: z.number().positive().optional(),
+      maxDrawdownPct: z.number().positive().max(1).optional(),
+      cooldownSeconds: z.number().nonnegative().optional(),
+    }).partial().optional(),
+  });
+
+  app.post('/backtest', async (request, reply) => {
+    const parse = backtestSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid backtest payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    try {
+      const result = deps.backtestService.run(parse.data);
+      return result;
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  // ─── Marketplace endpoints ────────────────────────────────────────
+
+  const createListingSchema = z.object({
+    agentId: z.string().min(2),
+    strategyId: z.string().min(1),
+    description: z.string().min(2).max(2000),
+    performanceStats: z.object({
+      totalReturnPct: z.number(),
+      maxDrawdownPct: z.number(),
+      sharpeRatio: z.number(),
+      tradeCount: z.number().int().nonnegative(),
+      winRate: z.number().min(0).max(100),
+    }),
+    fee: z.number().nonnegative(),
+  });
+
+  app.post('/marketplace/listings', async (request, reply) => {
+    const parse = createListingSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid listing payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    try {
+      const listing = deps.marketplaceService.createListing(parse.data);
+      return reply.code(201).send({ listing });
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  app.get('/marketplace/listings', async () => ({
+    listings: deps.marketplaceService.listAll(),
+  }));
+
+  app.get('/marketplace/listings/:id', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const listing = deps.marketplaceService.getListingWithStats(id);
+    if (!listing) {
+      return reply.code(404).send(toErrorEnvelope(ErrorCode.ListingNotFound, 'Listing not found.'));
+    }
+    return { listing };
+  });
+
+  const subscribeSchema = z.object({
+    subscriberId: z.string().min(2),
+  });
+
+  app.post('/marketplace/listings/:id/subscribe', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const parse = subscribeSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid subscribe payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    try {
+      const subscription = deps.marketplaceService.subscribe(id, parse.data.subscriberId);
+      return reply.code(201).send({ subscription });
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
   });
 
   app.get('/state', async () => deps.store.snapshot());

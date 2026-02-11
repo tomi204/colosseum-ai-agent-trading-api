@@ -20,6 +20,8 @@ export const ErrorCode = {
   SimulationFailed: 'simulation_failed',
   ProposalNotFound: 'proposal_not_found',
   ProofNotFound: 'proof_not_found',
+  ListingNotFound: 'listing_not_found',
+  BacktestFailed: 'backtest_failed',
   InternalError: 'internal_error',
 } as const;
 

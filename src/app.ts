@@ -26,6 +26,9 @@ import { loadX402Policy } from './services/x402Policy.js';
 import { ReputationService } from './services/reputationService.js';
 import { ProofAnchorService } from './services/proofAnchorService.js';
 import { GovernanceService } from './services/governanceService.js';
+import { OrderBookService } from './services/orderBookService.js';
+import { BacktestService } from './services/backtestService.js';
+import { MarketplaceService } from './services/marketplaceService.js';
 import { RateLimiter } from './api/rateLimiter.js';
 import { StagedPipeline } from './domain/execution/stagedPipeline.js';
 
@@ -98,6 +101,9 @@ export async function buildApp(config: AppConfig): Promise<AppContext> {
   const reputationService = new ReputationService(stateStore);
   const proofAnchorService = new ProofAnchorService(stateStore, config.trading.liveEnabled);
   const governanceService = new GovernanceService(stateStore);
+  const orderBookService = new OrderBookService(stateStore);
+  const backtestService = new BacktestService(strategyRegistry);
+  const marketplaceService = new MarketplaceService(stateStore);
 
   const x402Policy = await loadX402Policy(config.payments.x402PolicyFile, config.payments.x402RequiredPaths);
   app.addHook('preHandler', x402PaymentGate(config.payments, stateStore, x402Policy));
@@ -125,6 +131,9 @@ export async function buildApp(config: AppConfig): Promise<AppContext> {
     reputationService,
     proofAnchorService,
     governanceService,
+    orderBookService,
+    backtestService,
+    marketplaceService,
     x402Policy,
     getRuntimeMetrics: () => {
       const state = stateStore.snapshot();
