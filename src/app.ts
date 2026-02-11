@@ -37,6 +37,8 @@ import { StrategyCompareService } from './services/strategyCompareService.js';
 import { PriceOracleService } from './services/priceOracleService.js';
 import { RebalanceService } from './services/rebalanceService.js';
 import { AlertService } from './services/alertService.js';
+import { CopyTradingService } from './services/copyTradingService.js';
+import { CreditRatingService } from './services/creditRatingService.js';
 import { RateLimiter } from './api/rateLimiter.js';
 import { StagedPipeline } from './domain/execution/stagedPipeline.js';
 
@@ -120,6 +122,8 @@ export async function buildApp(config: AppConfig): Promise<AppContext> {
   const priceOracleService = new PriceOracleService(stateStore);
   const rebalanceService = new RebalanceService(stateStore);
   const alertService = new AlertService(stateStore);
+  const copyTradingService = new CopyTradingService(stateStore);
+  const creditRatingService = new CreditRatingService(stateStore);
 
   // Wire messaging service to coordination service for squad member lookup
   messagingService.setSquadMemberLookup((squadId: string) => {
@@ -164,6 +168,8 @@ export async function buildApp(config: AppConfig): Promise<AppContext> {
     priceOracleService,
     rebalanceService,
     alertService,
+    copyTradingService,
+    creditRatingService,
     x402Policy,
     getRuntimeMetrics: () => {
       const state = stateStore.snapshot();

@@ -23,7 +23,8 @@ export type EventType =
   | 'journal.entry'
   | 'alert.created'
   | 'alert.triggered'
-  | 'alert.deleted';
+  | 'alert.deleted'
+  | 'copytrade.executed';
 
 export type EventCallback = (event: EventType, data: unknown) => void;
 

@@ -37,6 +37,8 @@ import { StrategyCompareService } from '../services/strategyCompareService.js';
 import { PriceOracleService } from '../services/priceOracleService.js';
 import { RebalanceService } from '../services/rebalanceService.js';
 import { AlertService } from '../services/alertService.js';
+import { CopyTradingService } from '../services/copyTradingService.js';
+import { CreditRatingService } from '../services/creditRatingService.js';
 import { RateLimiter } from './rateLimiter.js';
 import { StagedPipeline } from '../domain/execution/stagedPipeline.js';
 import { RuntimeMetrics } from '../types.js';
@@ -75,6 +77,8 @@ interface RouteDeps {
   priceOracleService: PriceOracleService;
   rebalanceService: RebalanceService;
   alertService: AlertService;
+  copyTradingService: CopyTradingService;
+  creditRatingService: CreditRatingService;
   getRuntimeMetrics: () => RuntimeMetrics;
 }
 
@@ -1426,6 +1430,72 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps): Pro
     const { agentId } = request.params as { agentId: string };
     return { history: deps.alertService.getHistory(agentId) };
   });
+
+  // ─── Copy Trading endpoints ──────────────────────────────────────────
+
+  const followAgentSchema = z.object({
+    targetAgentId: z.string().min(2),
+    copyRatio: z.number().min(0.1).max(1.0),
+    maxNotionalUsd: z.number().positive(),
+  });
+
+  app.post('/agents/:agentId/follow', async (request, reply) => {
+    const { agentId } = request.params as { agentId: string };
+    const parse = followAgentSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid follow payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    try {
+      const relation = deps.copyTradingService.followAgent(
+        agentId,
+        parse.data.targetAgentId,
+        { copyRatio: parse.data.copyRatio, maxNotionalUsd: parse.data.maxNotionalUsd },
+      );
+      return reply.code(201).send({ relation });
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  app.delete('/agents/:agentId/follow/:targetId', async (request, reply) => {
+    const { agentId, targetId } = request.params as { agentId: string; targetId: string };
+    try {
+      const result = deps.copyTradingService.unfollowAgent(agentId, targetId);
+      return result;
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  app.get('/agents/:agentId/followers', async (request) => {
+    const { agentId } = request.params as { agentId: string };
+    return { followers: deps.copyTradingService.getFollowers(agentId) };
+  });
+
+  app.get('/agents/:agentId/following', async (request) => {
+    const { agentId } = request.params as { agentId: string };
+    return { following: deps.copyTradingService.getFollowing(agentId) };
+  });
+
+  // ─── Credit Rating endpoints ──────────────────────────────────────────
+
+  app.get('/agents/:agentId/credit-rating', async (request, reply) => {
+    const { agentId } = request.params as { agentId: string };
+    const rating = deps.creditRatingService.getRatingBreakdown(agentId);
+    if (!rating) {
+      return reply.code(404).send(toErrorEnvelope(ErrorCode.AgentNotFound, 'Agent not found.'));
+    }
+    return rating;
+  });
+
+  app.get('/credit-ratings', async () => deps.creditRatingService.getAllRatings());
 
   app.get('/state', async () => deps.store.snapshot());
 }
