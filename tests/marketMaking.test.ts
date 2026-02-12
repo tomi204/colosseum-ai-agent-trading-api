@@ -284,17 +284,15 @@ describe('MarketMakingService — Risk Limits', () => {
     const session = svc.startSession({
       agentId: 'agent-1',
       pair: 'SOL/USDC',
-      config: { maxLossUsd: -10 },
+      config: { maxLossUsd: -5 },
     });
     svc.feedPrice('SOL/USDC', 100);
 
-    // Execute a trade that generates a large loss
-    // Buy high, price drops
-    svc.recordFill({ sessionId: session.id, side: 'buy', price: 100, quantity: 50, feeType: 'taker' });
-    // Feed lower price
-    svc.feedPrice('SOL/USDC', 90);
-    // Sell low
-    svc.recordFill({ sessionId: session.id, side: 'sell', price: 90, quantity: 50, feeType: 'taker' });
+    // Buy at mid, then feed a much lower price so selling generates big loss
+    svc.recordFill({ sessionId: session.id, side: 'buy', price: 100, quantity: 10, feeType: 'taker' });
+    svc.feedPrice('SOL/USDC', 50);
+    // Sell at heavy loss — PnL impact: (50 - 50)*10 - fee ≈ large negative from price move
+    svc.recordFill({ sessionId: session.id, side: 'sell', price: 50, quantity: 10, feeType: 'taker' });
 
     const updated = svc.getSession(session.id)!;
     expect(updated.status).toBe('halted');

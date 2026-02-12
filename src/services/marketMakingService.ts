@@ -63,6 +63,7 @@ export interface InventoryState {
   quoteBalance: number;    // units of quote asset (USD)
   netExposure: number;     // baseBalance * midPrice
   inventoryRatio: number;  // baseBalance / maxInventory, range [-1, 1]
+  avgEntryPrice: number;   // weighted average entry price for cost basis
   lastRebalanceAt: string | null;
   rebalanceCount: number;
 }
@@ -229,6 +230,7 @@ export class MarketMakingService {
         quoteBalance: config.orderSizeUsd * config.depth * 2,
         netExposure: 0,
         inventoryRatio: 0,
+        avgEntryPrice: 0,
         lastRebalanceAt: null,
         rebalanceCount: 0,
       },
@@ -510,13 +512,32 @@ export class MarketMakingService {
     const feeRate = params.feeType === 'maker' ? config.makerFeeRate : config.takerFeeRate;
     const feeUsd = notionalUsd * feeRate;
 
-    // Update inventory
+    // Compute PnL impact using cost basis
+    const midPrice = this.getLatestPrice(session.pair);
+    let pnlImpact = -feeUsd;
+
     if (params.side === 'buy') {
+      // Update average entry price (weighted average)
+      const prevCost = session.inventory.baseBalance * session.inventory.avgEntryPrice;
+      const newCost = params.quantity * params.price;
+      const newBalance = session.inventory.baseBalance + params.quantity;
+      session.inventory.avgEntryPrice = newBalance > 0
+        ? (prevCost + newCost) / newBalance
+        : params.price;
+
       session.inventory.baseBalance += params.quantity;
       session.inventory.quoteBalance -= notionalUsd;
     } else {
+      // Realised PnL = (sell price - avg entry) * quantity
+      if (session.inventory.avgEntryPrice > 0) {
+        pnlImpact += (params.price - session.inventory.avgEntryPrice) * params.quantity;
+      }
       session.inventory.baseBalance -= params.quantity;
       session.inventory.quoteBalance += notionalUsd;
+      // Reset avg entry price if position closed
+      if (session.inventory.baseBalance <= 0) {
+        session.inventory.avgEntryPrice = 0;
+      }
     }
 
     // Update inventory ratio
@@ -525,13 +546,7 @@ export class MarketMakingService {
       : 0;
 
     // Update net exposure
-    const midPrice = this.getLatestPrice(session.pair);
     session.inventory.netExposure = session.inventory.baseBalance * midPrice;
-
-    // Compute PnL impact
-    const pnlImpact = params.side === 'sell'
-      ? (params.price - midPrice) * params.quantity - feeUsd
-      : (midPrice - params.price) * params.quantity - feeUsd;
 
     // Update PnL state
     session.pnl.realizedPnlUsd += pnlImpact;
@@ -553,9 +568,10 @@ export class MarketMakingService {
       ? (prevTotal + spreadCapture) / session.pnl.tradeCount
       : 0;
 
-    // Update unrealised PnL
-    session.pnl.unrealizedPnlUsd = session.inventory.baseBalance * midPrice
-      - Math.abs(session.inventory.baseBalance) * midPrice; // simplification
+    // Update unrealised PnL (mark-to-market vs cost basis)
+    session.pnl.unrealizedPnlUsd = session.inventory.baseBalance > 0 && session.inventory.avgEntryPrice > 0
+      ? session.inventory.baseBalance * (midPrice - session.inventory.avgEntryPrice)
+      : 0;
     session.pnl.totalPnlUsd = session.pnl.realizedPnlUsd + session.pnl.unrealizedPnlUsd;
 
     // Track peak and drawdown
