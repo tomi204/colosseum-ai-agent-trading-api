@@ -5429,4 +5429,81 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps): Pro
       total: deps.agentIdentityService.getRegistrySize(),
     };
   });
+
+  // ─── Data Pipeline & ETL endpoints ────────────────────────────────
+
+  app.get('/data/sources', async () => ({
+    sources: deps.dataPipelineService.listSources(),
+    stats: deps.dataPipelineService.getStats(),
+  }));
+
+  app.post('/data/ingest', async (request, reply) => {
+    const parse = dataIngestSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid data ingest payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    try {
+      const record = deps.dataPipelineService.ingest(parse.data);
+      return reply.code(201).send({ record });
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('Unknown data source')) {
+        return reply.code(404).send(toErrorEnvelope(
+          ErrorCode.DataSourceNotFound,
+          error.message,
+        ));
+      }
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  app.get('/data/query', async (request, reply) => {
+    const query = request.query as Record<string, string>;
+    const parseInput: Record<string, unknown> = {};
+    if (query.sourceId) parseInput.sourceId = query.sourceId;
+    if (query.dataType) parseInput.dataType = query.dataType;
+    if (query.from) parseInput.from = query.from;
+    if (query.to) parseInput.to = query.to;
+    if (query.limit) parseInput.limit = Number(query.limit);
+
+    const parse = dataQuerySchema.safeParse(parseInput);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid query parameters.',
+        parse.error.flatten(),
+      ));
+    }
+
+    return { records: deps.dataPipelineService.query(parse.data) };
+  });
+
+  app.get('/data/quality', async (request) => {
+    const query = request.query as { sourceId?: string };
+    return { reports: deps.dataPipelineService.getQualityReport(query.sourceId) };
+  });
+
+  app.post('/data/subscribe', async (request, reply) => {
+    const parse = dataSubscribeSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid subscription payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    const subscription = deps.dataPipelineService.subscribe(parse.data);
+    return reply.code(201).send({ subscription });
+  });
+
+  app.get('/data/metrics', async () => ({
+    metrics: deps.dataPipelineService.computeAllMetrics(),
+    definitions: deps.dataPipelineService.listMetricDefinitions(),
+  }));
 }

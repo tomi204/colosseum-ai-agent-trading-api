@@ -87,6 +87,7 @@ import { PerformanceAttributionService } from './services/performanceAttribution
 import { SwarmIntelligenceService } from './services/swarmIntelligenceService.js';
 import { FundingRateService } from './services/fundingRateService.js';
 import { NftTradingService } from './services/nftTradingService.js';
+import { DataPipelineService } from './services/dataPipelineService.js';
 import { AgentIdentityService } from './services/agentIdentityService.js';
 import { PredictionMarketService } from './services/predictionMarketService.js';
 import { RateLimiter } from './api/rateLimiter.js';
