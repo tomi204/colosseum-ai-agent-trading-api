@@ -78,6 +78,9 @@ import { YieldFarmingService } from './services/yieldFarmingService.js';
 import { PositionSizingService } from './services/positionSizingService.js';
 import { InsuranceService } from './services/insuranceService.js';
 import { MicrostructureService } from './services/microstructureService.js';
+import { MarketMakingService } from './services/marketMakingService.js';
+import { TokenAnalyticsService } from './services/tokenAnalyticsService.js';
+import { TrustGraphService } from './services/trustGraphService.js';
 import { RateLimiter } from './api/rateLimiter.js';
 import { StagedPipeline } from './domain/execution/stagedPipeline.js';
 
@@ -202,6 +205,9 @@ export async function buildApp(config: AppConfig): Promise<AppContext> {
   const positionSizingService = new PositionSizingService();
   const insuranceService = new InsuranceService(stateStore);
   const microstructureService = new MicrostructureService(stateStore);
+  const marketMakingService = new MarketMakingService(stateStore);
+  const tokenAnalyticsService = new TokenAnalyticsService(stateStore);
+  const trustGraphService = new TrustGraphService();
 
   // Start notification listener
   notificationService.startListening();
@@ -294,6 +300,9 @@ export async function buildApp(config: AppConfig): Promise<AppContext> {
     positionSizingService,
     insuranceService,
     microstructureService,
+    marketMakingService,
+    tokenAnalyticsService,
+    trustGraphService,
     x402Policy,
     getRuntimeMetrics: () => {
       const state = stateStore.snapshot();

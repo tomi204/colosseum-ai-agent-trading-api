@@ -79,6 +79,9 @@ import { YieldFarmingService } from '../services/yieldFarmingService.js';
 import { PositionSizingService } from '../services/positionSizingService.js';
 import { InsuranceService, CoverageType } from '../services/insuranceService.js';
 import { MicrostructureService } from '../services/microstructureService.js';
+import { MarketMakingService } from '../services/marketMakingService.js';
+import { TokenAnalyticsService } from '../services/tokenAnalyticsService.js';
+import { TrustGraphService } from '../services/trustGraphService.js';
 import { RateLimiter } from './rateLimiter.js';
 import { StagedPipeline } from '../domain/execution/stagedPipeline.js';
 import { RuntimeMetrics } from '../types.js';
@@ -158,6 +161,9 @@ interface RouteDeps {
   positionSizingService: PositionSizingService;
   insuranceService: InsuranceService;
   microstructureService: MicrostructureService;
+  marketMakingService: MarketMakingService;
+  tokenAnalyticsService: TokenAnalyticsService;
+  trustGraphService: TrustGraphService;
   getRuntimeMetrics: () => RuntimeMetrics;
 }
 
@@ -4448,5 +4454,236 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps): Pro
   app.get('/microstructure/:symbol/whales', async (request) => {
     const { symbol } = request.params as { symbol: string };
     return deps.microstructureService.getWhaleActivity(symbol);
+  });
+
+  // ─── Token Analytics endpoints ────────────────────────────────────────
+
+  app.get('/token-analytics/:symbol/holders', async (request) => {
+    const { symbol } = request.params as { symbol: string };
+    return deps.tokenAnalyticsService.getHolderDistribution(symbol);
+  });
+
+  app.get('/token-analytics/:symbol/velocity', async (request) => {
+    const { symbol } = request.params as { symbol: string };
+    return deps.tokenAnalyticsService.getTokenVelocity(symbol);
+  });
+
+  app.get('/token-analytics/:symbol/supply', async (request) => {
+    const { symbol } = request.params as { symbol: string };
+    return deps.tokenAnalyticsService.getSupplyAnalysis(symbol);
+  });
+
+  app.get('/token-analytics/:symbol/momentum', async (request) => {
+    const { symbol } = request.params as { symbol: string };
+    return deps.tokenAnalyticsService.getMomentumScore(symbol);
+  });
+
+  app.get('/token-analytics/:symbol/risk', async (request) => {
+    const { symbol } = request.params as { symbol: string };
+    return deps.tokenAnalyticsService.getRiskRating(symbol);
+  });
+
+  app.get('/token-analytics/correlation', async (request) => {
+    const query = request.query as { symbols?: string };
+    const symbols = query.symbols
+      ? query.symbols.split(',').map((s) => s.trim()).filter(Boolean)
+      : undefined;
+    return deps.tokenAnalyticsService.getCorrelationMatrix(symbols);
+  });
+
+  // ─── Trust Graph endpoints ────────────────────────────────────────────
+
+  app.get('/trust/graph', async () => deps.trustGraphService.getGraph());
+
+  app.get('/trust/:agentId/score', async (request) => {
+    const { agentId } = request.params as { agentId: string };
+    return deps.trustGraphService.getTrustScore(agentId);
+  });
+
+  const trustRateSchema = z.object({
+    from: z.string().min(2),
+    to: z.string().min(2),
+    score: z.number().min(0).max(1),
+    context: z.string().min(1).max(200).optional(),
+  });
+
+  app.post('/trust/rate', async (request, reply) => {
+    const parse = trustRateSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid trust rating payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    try {
+      const edge = deps.trustGraphService.rate(parse.data);
+      return reply.code(201).send({ edge });
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  app.get('/trust/:agentId/web', async (request) => {
+    const { agentId } = request.params as { agentId: string };
+    const query = request.query as { depth?: string };
+    const depth = query.depth ? Math.min(Math.max(Number(query.depth), 1), 5) : undefined;
+    return deps.trustGraphService.getWebOfTrust(agentId, depth);
+  });
+
+  app.get('/trust/sybil-check/:agentId', async (request) => {
+    const { agentId } = request.params as { agentId: string };
+    return deps.trustGraphService.sybilCheck(agentId);
+  });
+
+  const trustConsensusSchema = z.object({
+    viewerAgentId: z.string().min(2),
+    inputs: z.array(z.object({
+      agentId: z.string().min(2),
+      signal: z.number(),
+    })).min(1),
+  });
+
+  app.post('/trust/consensus', async (request, reply) => {
+    const parse = trustConsensusSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid consensus payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    try {
+      const result = deps.trustGraphService.consensus(
+        parse.data.viewerAgentId,
+        parse.data.inputs,
+      );
+      return result;
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  // ─── Market Making Engine endpoints ─────────────────────────────────
+
+  const mmStartSchema = z.object({
+    agentId: z.string().min(2),
+    pair: z.string().min(3).max(20),
+    config: z.object({
+      baseSpreadBps: z.number().positive().optional(),
+      depth: z.number().int().min(1).max(20).optional(),
+      depthStepMultiplier: z.number().positive().optional(),
+      orderSizeUsd: z.number().positive().optional(),
+      volatilityWindowMs: z.number().int().positive().optional(),
+      volatilityMultiplier: z.number().positive().optional(),
+      inventorySkewFactor: z.number().min(0).max(5).optional(),
+      maxInventory: z.number().positive().optional(),
+      maxLossUsd: z.number().optional(),
+      makerFeeRate: z.number().min(0).max(0.01).optional(),
+      takerFeeRate: z.number().min(0).max(0.01).optional(),
+      refreshIntervalMs: z.number().int().positive().optional(),
+    }).optional(),
+  });
+
+  app.post('/market-making/start', async (request, reply) => {
+    const parse = mmStartSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid market making start payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    try {
+      const session = deps.marketMakingService.startSession({
+        agentId: parse.data.agentId,
+        pair: parse.data.pair,
+        config: parse.data.config,
+      });
+      return reply.code(201).send({ session });
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  const mmStopSchema = z.object({
+    sessionId: z.string().min(1),
+  });
+
+  app.post('/market-making/stop', async (request, reply) => {
+    const parse = mmStopSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid market making stop payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    try {
+      const session = deps.marketMakingService.stopSession(parse.data.sessionId);
+      return { session };
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  app.get('/market-making/status', async (request) => {
+    const query = request.query as { agentId?: string };
+    return { sessions: deps.marketMakingService.getActiveSessions(query.agentId) };
+  });
+
+  app.get('/market-making/quotes/:pair', async (request) => {
+    const { pair } = request.params as { pair: string };
+    return { quotes: deps.marketMakingService.getQuotesForPair(pair) };
+  });
+
+  app.get('/market-making/pnl/:agentId', async (request) => {
+    const { agentId } = request.params as { agentId: string };
+    return deps.marketMakingService.getAgentPnl(agentId);
+  });
+
+  const mmConfigSchema = z.object({
+    sessionId: z.string().min(1),
+    config: z.object({
+      baseSpreadBps: z.number().positive().optional(),
+      depth: z.number().int().min(1).max(20).optional(),
+      depthStepMultiplier: z.number().positive().optional(),
+      orderSizeUsd: z.number().positive().optional(),
+      volatilityWindowMs: z.number().int().positive().optional(),
+      volatilityMultiplier: z.number().positive().optional(),
+      inventorySkewFactor: z.number().min(0).max(5).optional(),
+      maxInventory: z.number().positive().optional(),
+      maxLossUsd: z.number().optional(),
+      makerFeeRate: z.number().min(0).max(0.01).optional(),
+      takerFeeRate: z.number().min(0).max(0.01).optional(),
+      refreshIntervalMs: z.number().int().positive().optional(),
+    }),
+  });
+
+  app.post('/market-making/config', async (request, reply) => {
+    const parse = mmConfigSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid market making config payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    try {
+      const session = deps.marketMakingService.updateConfig(parse.data.sessionId, parse.data.config);
+      return { session };
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
   });
 }
