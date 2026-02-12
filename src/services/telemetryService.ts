@@ -325,9 +325,11 @@ export class TelemetryService {
     if (!uptimeMet || !avgResponseTimeMet || !p95ResponseTimeMet) {
       overall = 'breached';
     } else if (
-      uptimePct < slaTargets.uptimePct + 0.5 ||
-      avgResponseTimeMs > slaTargets.maxAvgResponseTimeMs * 0.8 ||
-      p95ResponseTimeMs > slaTargets.maxP95ResponseTimeMs * 0.8
+      totalRequests > 0 && (
+        uptimePct < slaTargets.uptimePct + 0.05 ||
+        avgResponseTimeMs > slaTargets.maxAvgResponseTimeMs * 0.8 ||
+        p95ResponseTimeMs > slaTargets.maxP95ResponseTimeMs * 0.8
+      )
     ) {
       overall = 'at_risk';
     }

@@ -67,6 +67,7 @@ import { LiquidityAnalysisService } from '../services/liquidityAnalysisService.j
 import { PortfolioAnalyticsService } from '../services/portfolioAnalyticsService.js';
 import { AgentMarketplaceService } from '../services/agentMarketplaceService.js';
 import { ComplianceService } from '../services/complianceService.js';
+import { SmartOrderRouterService } from '../services/smartOrderRouterService.js';
 import { BridgeMonitorService } from '../services/bridgeMonitorService.js';
 import { TelemetryService } from '../services/telemetryService.js';
 import { RateLimiter } from './rateLimiter.js';
@@ -136,6 +137,7 @@ interface RouteDeps {
   portfolioAnalyticsService: PortfolioAnalyticsService;
   agentMarketplaceService: AgentMarketplaceService;
   complianceService: ComplianceService;
+  smartOrderRouterService: SmartOrderRouterService;
   bridgeMonitorService: BridgeMonitorService;
   telemetryService: TelemetryService;
   getRuntimeMetrics: () => RuntimeMetrics;
@@ -3231,4 +3233,200 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps): Pro
   }));
 
   app.get('/state', async () => deps.store.snapshot());
+
+  // ─── Smart Order Router endpoints ────────────────────────────────────
+
+  const sorRouteSchema = z.object({
+    symbol: z.string().min(1).max(20),
+    side: z.enum(['buy', 'sell']),
+    notionalUsd: z.number().positive(),
+    maxSlippagePct: z.number().min(0).max(100).optional(),
+  });
+
+  app.post('/sor/route', async (request, reply) => {
+    const parse = sorRouteSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid SOR route payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    try {
+      const route = deps.smartOrderRouterService.routeOrder(parse.data);
+      return { route };
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  const sorTwapSchema = z.object({
+    symbol: z.string().min(1).max(20),
+    side: z.enum(['buy', 'sell']),
+    notionalUsd: z.number().positive(),
+    durationMs: z.number().positive(),
+    intervalMs: z.number().positive().optional(),
+  });
+
+  app.post('/sor/twap', async (request, reply) => {
+    const parse = sorTwapSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid TWAP payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    try {
+      const order = deps.smartOrderRouterService.startTwap(parse.data);
+      return reply.code(201).send({ order });
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  const sorVwapSchema = z.object({
+    symbol: z.string().min(1).max(20),
+    side: z.enum(['buy', 'sell']),
+    notionalUsd: z.number().positive(),
+    durationMs: z.number().positive(),
+    buckets: z.number().int().min(2).max(100).optional(),
+  });
+
+  app.post('/sor/vwap', async (request, reply) => {
+    const parse = sorVwapSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid VWAP payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    try {
+      const order = deps.smartOrderRouterService.startVwap(parse.data);
+      return reply.code(201).send({ order });
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  const sorIcebergSchema = z.object({
+    symbol: z.string().min(1).max(20),
+    side: z.enum(['buy', 'sell']),
+    totalNotionalUsd: z.number().positive(),
+    visiblePct: z.number().min(0.01).max(1).optional(),
+    chunkSize: z.number().positive().optional(),
+  });
+
+  app.post('/sor/iceberg', async (request, reply) => {
+    const parse = sorIcebergSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid iceberg order payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    try {
+      const order = deps.smartOrderRouterService.startIceberg(parse.data);
+      return reply.code(201).send({ order });
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  app.get('/sor/quality/:intentId', async (request, reply) => {
+    const { intentId } = request.params as { intentId: string };
+    const quality = deps.smartOrderRouterService.scoreExecution(intentId);
+    if (!quality) {
+      return reply.code(404).send(toErrorEnvelope(
+        ErrorCode.IntentNotFound,
+        'Trade intent not found or not yet executed.',
+      ));
+    }
+    return { quality };
+  });
+
+  const sorSlippageSchema = z.object({
+    symbol: z.string().min(1).max(20),
+    side: z.enum(['buy', 'sell']),
+    notionalUsd: z.number().positive(),
+  });
+
+  app.get('/sor/slippage-estimate', async (request, reply) => {
+    const query = request.query as { symbol?: string; side?: string; notionalUsd?: string };
+    const parsed = sorSlippageSchema.safeParse({
+      symbol: query.symbol,
+      side: query.side,
+      notionalUsd: query.notionalUsd ? Number(query.notionalUsd) : undefined,
+    });
+    if (!parsed.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid slippage estimate query. Required: symbol, side, notionalUsd.',
+        parsed.error.flatten(),
+      ));
+    }
+
+    try {
+      const estimate = deps.smartOrderRouterService.predictSlippage(parsed.data);
+      return { estimate };
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  // ─── Telemetry & Observability endpoints ─────────────────────────────
+
+  app.get('/telemetry/metrics', async () =>
+    deps.telemetryService.getSystemMetrics(),
+  );
+
+  app.get('/telemetry/agents/:agentId/heartbeat', async (request) => {
+    const { agentId } = request.params as { agentId: string };
+    return deps.telemetryService.getAgentHeartbeat(agentId);
+  });
+
+  app.get('/telemetry/anomalies', async () => ({
+    anomalies: deps.telemetryService.getAnomalies(),
+  }));
+
+  app.get('/telemetry/sla', async () =>
+    deps.telemetryService.getSlaReport(),
+  );
+
+  app.get('/telemetry/incidents', async () => ({
+    incidents: deps.telemetryService.getIncidents(),
+  }));
+
+  const telemetryRecordSchema = z.object({
+    endpoint: z.string().min(1),
+    method: z.string().min(1).max(10),
+    latencyMs: z.number().nonnegative(),
+    statusCode: z.number().int().min(100).max(599),
+    agentId: z.string().min(1).optional(),
+  });
+
+  app.post('/telemetry/record', async (request, reply) => {
+    const parse = telemetryRecordSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid telemetry record payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    const record = deps.telemetryService.recordMetric(parse.data);
+    return reply.code(201).send({ record });
+  });
 }

@@ -67,6 +67,8 @@ import { AgentMarketplaceService } from './services/agentMarketplaceService.js';
 import { PortfolioAnalyticsService } from './services/portfolioAnalyticsService.js';
 import { ComplianceService } from './services/complianceService.js';
 import { BridgeMonitorService } from './services/bridgeMonitorService.js';
+import { SmartOrderRouterService } from './services/smartOrderRouterService.js';
+import { TelemetryService } from './services/telemetryService.js';
 import { RateLimiter } from './api/rateLimiter.js';
 import { StagedPipeline } from './domain/execution/stagedPipeline.js';
 
@@ -180,6 +182,8 @@ export async function buildApp(config: AppConfig): Promise<AppContext> {
   const agentMarketplaceService = new AgentMarketplaceService(stateStore);
   const complianceService = new ComplianceService(stateStore);
   const bridgeMonitorService = new BridgeMonitorService();
+  const smartOrderRouterService = new SmartOrderRouterService(stateStore);
+  const telemetryService = new TelemetryService(stateStore);
 
   // Start notification listener
   notificationService.startListening();
@@ -261,6 +265,8 @@ export async function buildApp(config: AppConfig): Promise<AppContext> {
     agentMarketplaceService,
     complianceService,
     bridgeMonitorService,
+    smartOrderRouterService,
+    telemetryService,
     x402Policy,
     getRuntimeMetrics: () => {
       const state = stateStore.snapshot();

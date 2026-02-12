@@ -201,11 +201,12 @@ describe('TelemetryService', () => {
   // ─── 9. Anomaly detection: error rate surge ─────────────────────────
 
   it('detects error rate surge anomaly', () => {
-    // Build baseline with low error rate
-    recordMany(service, 40, { endpoint: '/safe', statusCode: 200 });
+    // Build a large baseline with zero errors so overall error rate is very low
+    recordMany(service, 100, { endpoint: '/safe', statusCode: 200 });
 
-    // Inject a bunch of errors
-    recordMany(service, 15, { endpoint: '/safe', statusCode: 500 });
+    // Now inject a burst of errors — the last 50 window will have high error rate
+    // relative to overall, crossing the 15% threshold and being >2x overall
+    recordMany(service, 40, { endpoint: '/safe', statusCode: 500 });
 
     const anomalies = service.getAnomalies();
     const errorAnomaly = anomalies.find((a) => a.type === 'error_rate_surge');
