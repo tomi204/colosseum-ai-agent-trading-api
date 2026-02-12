@@ -47,7 +47,15 @@ export type EventType =
   | 'comm.message.acknowledged'
   | 'comm.channel.created'
   | 'comm.channel.subscribed'
-  | 'comm.channel.unsubscribed';
+  | 'comm.channel.unsubscribed'
+  | 'orchestration.workflow.created'
+  | 'orchestration.workflow.started'
+  | 'orchestration.workflow.completed'
+  | 'orchestration.workflow.failed'
+  | 'orchestration.workflow.cancelled'
+  | 'orchestration.task.started'
+  | 'orchestration.task.completed'
+  | 'orchestration.task.failed';
 
 export type EventCallback = (event: EventType, data: unknown) => void;
 

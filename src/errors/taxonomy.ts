@@ -33,6 +33,7 @@ export const ErrorCode = {
   TokenLaunchNotFound: 'token_launch_not_found',
   CommChannelNotFound: 'comm_channel_not_found',
   CommMessageNotFound: 'comm_message_not_found',
+  WorkflowNotFound: 'workflow_not_found',
   InternalError: 'internal_error',
 } as const;
 

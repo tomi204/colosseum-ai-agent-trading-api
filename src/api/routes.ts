@@ -82,6 +82,9 @@ import { MicrostructureService } from '../services/microstructureService.js';
 import { MarketMakingService } from '../services/marketMakingService.js';
 import { TokenAnalyticsService } from '../services/tokenAnalyticsService.js';
 import { TrustGraphService } from '../services/trustGraphService.js';
+import { OrchestrationService } from '../services/orchestrationService.js';
+import { ProtocolAggregatorService } from '../services/protocolAggregatorService.js';
+import { PerformanceAttributionService } from '../services/performanceAttributionService.js';
 import { RateLimiter } from './rateLimiter.js';
 import { StagedPipeline } from '../domain/execution/stagedPipeline.js';
 import { RuntimeMetrics } from '../types.js';
@@ -164,6 +167,9 @@ interface RouteDeps {
   marketMakingService: MarketMakingService;
   tokenAnalyticsService: TokenAnalyticsService;
   trustGraphService: TrustGraphService;
+  orchestrationService: OrchestrationService;
+  protocolAggregatorService: ProtocolAggregatorService;
+  performanceAttributionService: PerformanceAttributionService;
   getRuntimeMetrics: () => RuntimeMetrics;
 }
 
@@ -4681,6 +4687,202 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps): Pro
     try {
       const session = deps.marketMakingService.updateConfig(parse.data.sessionId, parse.data.config);
       return { session };
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  // ─── Orchestration Engine endpoints ─────────────────────────────────
+
+  const createWorkflowSchema = z.object({
+    name: z.string().min(2).max(200),
+    description: z.string().max(2000).optional(),
+    mode: z.enum(['parallel', 'sequential']).optional(),
+    tasks: z.array(z.object({
+      id: z.string().min(1).max(120),
+      name: z.string().min(1).max(200),
+      dependsOn: z.array(z.string()).default([]),
+      requiredCapability: z.string().max(120).optional(),
+      assignedAgentId: z.string().max(120).optional(),
+      retryPolicy: z.object({
+        maxAttempts: z.number().int().min(1).max(10),
+        baseDelayMs: z.number().int().min(0).max(60_000),
+        backoffFactor: z.number().min(1).max(10).optional(),
+      }).optional(),
+      mode: z.enum(['parallel', 'sequential']).optional(),
+      payload: z.record(z.string(), z.unknown()).optional(),
+      estimatedDurationMs: z.number().positive().optional(),
+    })).min(1),
+  });
+
+  app.post('/orchestration/workflows', async (request, reply) => {
+    const parse = createWorkflowSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid workflow payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    try {
+      const workflow = deps.orchestrationService.createWorkflow(parse.data);
+      return reply.code(201).send({ workflow });
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  app.get('/orchestration/workflows', async (request) => {
+    const query = request.query as { status?: string };
+    const validStatuses = ['pending', 'running', 'completed', 'failed', 'cancelled'];
+    const statusFilter = query.status && validStatuses.includes(query.status)
+      ? query.status as any
+      : undefined;
+    return { workflows: deps.orchestrationService.listWorkflows(statusFilter) };
+  });
+
+  app.post('/orchestration/workflows/:id/start', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    try {
+      const workflow = await deps.orchestrationService.startWorkflow(id);
+      return { workflow };
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  app.get('/orchestration/workflows/:id/status', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const status = deps.orchestrationService.getWorkflowStatus(id);
+    if (!status) {
+      return reply.code(404).send(toErrorEnvelope(ErrorCode.WorkflowNotFound, 'Workflow not found.'));
+    }
+    return status;
+  });
+
+  app.get('/orchestration/analytics', async () => deps.orchestrationService.getAnalytics());
+
+  // ─── Performance Attribution endpoints ──────────────────────────────
+
+  app.get('/agents/:agentId/attribution/returns', async (request, reply) => {
+    const { agentId } = request.params as { agentId: string };
+    const result = deps.performanceAttributionService.computeReturnDecomposition(agentId);
+    if (!result) {
+      return reply.code(404).send(toErrorEnvelope(ErrorCode.AgentNotFound, 'Agent not found.'));
+    }
+    return result;
+  });
+
+  app.get('/agents/:agentId/attribution/factors', async (request, reply) => {
+    const { agentId } = request.params as { agentId: string };
+    const result = deps.performanceAttributionService.computeFactorAttribution(agentId);
+    if (!result) {
+      return reply.code(404).send(toErrorEnvelope(ErrorCode.AgentNotFound, 'Agent not found.'));
+    }
+    return result;
+  });
+
+  app.get('/agents/:agentId/attribution/timing', async (request, reply) => {
+    const { agentId } = request.params as { agentId: string };
+    const result = deps.performanceAttributionService.computeTimingAnalysis(agentId);
+    if (!result) {
+      return reply.code(404).send(toErrorEnvelope(ErrorCode.AgentNotFound, 'Agent not found.'));
+    }
+    return result;
+  });
+
+  app.get('/agents/:agentId/attribution/strategies', async (request, reply) => {
+    const { agentId } = request.params as { agentId: string };
+    const result = deps.performanceAttributionService.computeStrategyAttribution(agentId);
+    if (!result) {
+      return reply.code(404).send(toErrorEnvelope(ErrorCode.AgentNotFound, 'Agent not found.'));
+    }
+    return result;
+  });
+
+  app.get('/agents/:agentId/attribution/exposure', async (request, reply) => {
+    const { agentId } = request.params as { agentId: string };
+    const result = deps.performanceAttributionService.computeExposureAnalysis(agentId);
+    if (!result) {
+      return reply.code(404).send(toErrorEnvelope(ErrorCode.AgentNotFound, 'Agent not found.'));
+    }
+    return result;
+  });
+
+  app.get('/agents/:agentId/attribution/persistence', async (request, reply) => {
+    const { agentId } = request.params as { agentId: string };
+    const result = deps.performanceAttributionService.computePersistence(agentId);
+    if (!result) {
+      return reply.code(404).send(toErrorEnvelope(ErrorCode.AgentNotFound, 'Agent not found.'));
+    }
+    return result;
+  });
+
+  // ─── DeFi Protocol Aggregator endpoints ─────────────────────────────
+
+  app.get('/protocols', async () => ({
+    protocols: deps.protocolAggregatorService.listProtocols(),
+  }));
+
+  app.get('/protocols/compare', async (request) => {
+    const query = request.query as { ids?: string; sortBy?: string };
+    const protocolIds = query.ids ? query.ids.split(',').map((s) => s.trim()).filter(Boolean) : undefined;
+    const sortBy = query.sortBy ?? 'healthScore';
+    return deps.protocolAggregatorService.compareProtocols(protocolIds, sortBy);
+  });
+
+  app.get('/protocols/tvl', async () =>
+    deps.protocolAggregatorService.getTvlRankings(),
+  );
+
+  app.get('/protocols/alerts', async (request) => {
+    const query = request.query as { severity?: string; protocolId?: string; resolved?: string };
+    const opts: Record<string, unknown> = {};
+    if (query.severity) opts.severity = query.severity;
+    if (query.protocolId) opts.protocolId = query.protocolId;
+    if (query.resolved !== undefined) opts.resolved = query.resolved === 'true';
+    return { alerts: deps.protocolAggregatorService.getAlerts(opts as any) };
+  });
+
+  app.get('/protocols/yields', async (request) => {
+    const query = request.query as { token?: string };
+    return { yields: deps.protocolAggregatorService.compareYields(query.token) };
+  });
+
+  app.get('/protocols/:id', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const protocol = deps.protocolAggregatorService.getProtocolWithHealth(id);
+    if (!protocol) {
+      return reply.code(404).send(toErrorEnvelope(ErrorCode.AgentNotFound, 'Protocol not found.'));
+    }
+    return { protocol };
+  });
+
+  const protocolSwapSchema = z.object({
+    inputToken: z.string().min(1).max(20),
+    outputToken: z.string().min(1).max(20),
+    amountUsd: z.number().positive(),
+    maxSlippagePct: z.number().min(0).max(100).optional(),
+    preferredProtocol: z.string().min(1).optional(),
+  });
+
+  app.post('/protocols/swap', async (request, reply) => {
+    const parse = protocolSwapSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid swap payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    try {
+      const result = deps.protocolAggregatorService.executeSwap(parse.data);
+      return result;
     } catch (error) {
       sendDomainError(reply, error);
       return undefined;

@@ -81,6 +81,9 @@ import { MicrostructureService } from './services/microstructureService.js';
 import { MarketMakingService } from './services/marketMakingService.js';
 import { TokenAnalyticsService } from './services/tokenAnalyticsService.js';
 import { TrustGraphService } from './services/trustGraphService.js';
+import { OrchestrationService } from './services/orchestrationService.js';
+import { ProtocolAggregatorService } from './services/protocolAggregatorService.js';
+import { PerformanceAttributionService } from './services/performanceAttributionService.js';
 import { RateLimiter } from './api/rateLimiter.js';
 import { StagedPipeline } from './domain/execution/stagedPipeline.js';
 
@@ -208,6 +211,9 @@ export async function buildApp(config: AppConfig): Promise<AppContext> {
   const marketMakingService = new MarketMakingService(stateStore);
   const tokenAnalyticsService = new TokenAnalyticsService(stateStore);
   const trustGraphService = new TrustGraphService();
+  const orchestrationService = new OrchestrationService();
+  const performanceAttributionService = new PerformanceAttributionService(stateStore);
+  const protocolAggregatorService = new ProtocolAggregatorService();
 
   // Start notification listener
   notificationService.startListening();
@@ -303,6 +309,9 @@ export async function buildApp(config: AppConfig): Promise<AppContext> {
     marketMakingService,
     tokenAnalyticsService,
     trustGraphService,
+    orchestrationService,
+    performanceAttributionService,
+    protocolAggregatorService,
     x402Policy,
     getRuntimeMetrics: () => {
       const state = stateStore.snapshot();
