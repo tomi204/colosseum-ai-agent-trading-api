@@ -55,7 +55,11 @@ export type EventType =
   | 'orchestration.workflow.cancelled'
   | 'orchestration.task.started'
   | 'orchestration.task.completed'
-  | 'orchestration.task.failed';
+  | 'orchestration.task.failed'
+  | 'swarm.vote'
+  | 'swarm.consensus'
+  | 'swarm.aggregate'
+  | 'swarm.outcome';
 
 export type EventCallback = (event: EventType, data: unknown) => void;
 

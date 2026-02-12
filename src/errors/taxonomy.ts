@@ -34,6 +34,7 @@ export const ErrorCode = {
   CommChannelNotFound: 'comm_channel_not_found',
   CommMessageNotFound: 'comm_message_not_found',
   WorkflowNotFound: 'workflow_not_found',
+  NftCollectionNotFound: 'nft_collection_not_found',
   InternalError: 'internal_error',
 } as const;
 

@@ -85,6 +85,9 @@ import { TrustGraphService } from '../services/trustGraphService.js';
 import { OrchestrationService } from '../services/orchestrationService.js';
 import { ProtocolAggregatorService } from '../services/protocolAggregatorService.js';
 import { PerformanceAttributionService } from '../services/performanceAttributionService.js';
+import { SwarmIntelligenceService } from '../services/swarmIntelligenceService.js';
+import { FundingRateService } from '../services/fundingRateService.js';
+import { NftTradingService } from '../services/nftTradingService.js';
 import { RateLimiter } from './rateLimiter.js';
 import { StagedPipeline } from '../domain/execution/stagedPipeline.js';
 import { RuntimeMetrics } from '../types.js';
@@ -170,6 +173,9 @@ interface RouteDeps {
   orchestrationService: OrchestrationService;
   protocolAggregatorService: ProtocolAggregatorService;
   performanceAttributionService: PerformanceAttributionService;
+  swarmIntelligenceService: SwarmIntelligenceService;
+  fundingRateService: FundingRateService;
+  nftTradingService: NftTradingService;
   getRuntimeMetrics: () => RuntimeMetrics;
 }
 
@@ -4887,5 +4893,232 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps): Pro
       sendDomainError(reply, error);
       return undefined;
     }
+  });
+
+  // ─── Swarm Intelligence endpoints ─────────────────────────────────
+
+  const swarmVoteSchema = z.object({
+    topic: z.string().min(1).max(200),
+    agentId: z.string().min(2),
+    side: z.enum(['buy', 'sell', 'hold']),
+    confidence: z.number().min(0).max(1),
+    weight: z.number().positive().optional(),
+    reasoning: z.string().max(2000).optional(),
+  });
+
+  app.post('/swarm/vote', async (request, reply) => {
+    const parse = swarmVoteSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid swarm vote payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    try {
+      const vote = deps.swarmIntelligenceService.submitVote(parse.data);
+      return reply.code(201).send({ vote });
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  app.get('/swarm/consensus/:topic', async (request, reply) => {
+    const { topic } = request.params as { topic: string };
+    const query = request.query as { method?: string };
+    const validMethods = ['simple_majority', 'supermajority', 'weighted'];
+    const method = query.method && validMethods.includes(query.method)
+      ? query.method as 'simple_majority' | 'supermajority' | 'weighted'
+      : 'simple_majority';
+
+    try {
+      const consensus = deps.swarmIntelligenceService.getConsensus(topic, method);
+      return { consensus };
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  const swarmAggregateSchema = z.object({
+    signals: z.array(z.object({
+      agentId: z.string().min(2),
+      symbol: z.string().min(2).max(20),
+      side: z.enum(['buy', 'sell', 'hold']),
+      confidence: z.number().min(0).max(1),
+      weight: z.number().positive().optional(),
+    })).min(1),
+  });
+
+  app.post('/swarm/aggregate', async (request, reply) => {
+    const parse = swarmAggregateSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid signal aggregation payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    try {
+      const result = deps.swarmIntelligenceService.aggregateSignals(parse.data.signals);
+      return { signal: result };
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  app.get('/swarm/performance', async () => deps.swarmIntelligenceService.getPerformance());
+
+  app.get('/swarm/dissent', async () => ({
+    dissent: deps.swarmIntelligenceService.getDissent(),
+  }));
+
+  const swarmOptimizeSchema = z.object({
+    minGroupSize: z.number().int().min(2).max(10).optional(),
+  });
+
+  app.post('/swarm/optimize', async (request, reply) => {
+    const parse = swarmOptimizeSchema.safeParse(request.body ?? {});
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid optimization payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    try {
+      const result = deps.swarmIntelligenceService.optimizeComposition(parse.data.minGroupSize);
+      return { optimization: result };
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  // ─── Funding Rate Arbitrage endpoints ─────────────────────────────
+
+  app.get('/funding-rates/:symbol', async (request) => {
+    const { symbol } = request.params as { symbol: string };
+    const rates = deps.fundingRateService.getCurrentRates(symbol);
+    return { symbol, rates };
+  });
+
+  app.get('/funding-rates/:symbol/history', async (request) => {
+    const { symbol } = request.params as { symbol: string };
+    const query = request.query as { protocol?: string; limit?: string };
+    const opts: { protocol?: 'drift' | 'mango'; limit?: number } = {};
+    if (query.protocol === 'drift' || query.protocol === 'mango') opts.protocol = query.protocol;
+    if (query.limit) opts.limit = Number(query.limit);
+    const history = deps.fundingRateService.getHistory(symbol, opts);
+    return { symbol, history };
+  });
+
+  app.get('/funding-rates/arbitrage', async (request) => {
+    const query = request.query as { minYield?: string; symbol?: string };
+    const opts: { minAnnualizedYieldPct?: number; symbol?: string } = {};
+    if (query.minYield) opts.minAnnualizedYieldPct = Number(query.minYield);
+    if (query.symbol) opts.symbol = query.symbol;
+    const opportunities = deps.fundingRateService.getArbitrageOpportunities(opts);
+    return { opportunities };
+  });
+
+  app.get('/funding-rates/:symbol/predict', async (request) => {
+    const { symbol } = request.params as { symbol: string };
+    const query = request.query as { protocol?: string };
+    const protocol = (query.protocol === 'drift' || query.protocol === 'mango')
+      ? query.protocol
+      : undefined;
+    const predictions = deps.fundingRateService.predictFundingRate(symbol, protocol);
+    return { symbol, predictions };
+  });
+
+  app.get('/funding-rates/:symbol/carry', async (request) => {
+    const { symbol } = request.params as { symbol: string };
+    const query = request.query as { positionSize?: string; protocol?: string };
+    const positionSizeUsd = Number(query.positionSize ?? 10000);
+    const protocol = (query.protocol === 'drift' || query.protocol === 'mango')
+      ? query.protocol
+      : undefined;
+    const results = deps.fundingRateService.calculateCarryTrade(symbol, positionSizeUsd, protocol);
+    return { symbol, positionSizeUsd, results };
+  });
+
+  app.get('/funding-rates/:symbol/basis', async (request, reply) => {
+    const { symbol } = request.params as { symbol: string };
+    const basis = deps.fundingRateService.getBasis(symbol);
+    if (!basis) {
+      return reply.code(404).send(toErrorEnvelope(ErrorCode.AgentNotFound, 'Symbol not found.'));
+    }
+    return basis;
+  });
+
+  // ─── NFT Trading & Valuation endpoints ────────────────────────────
+
+  app.get('/nft/collections', async () => ({
+    collections: deps.nftTradingService.listCollections(),
+  }));
+
+  app.get('/nft/collections/:id/floor', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const floor = deps.nftTradingService.getFloorPrice(id);
+    if (!floor) {
+      return reply.code(404).send(toErrorEnvelope(ErrorCode.NftCollectionNotFound, 'NFT collection not found.'));
+    }
+    return floor;
+  });
+
+  app.get('/nft/collections/:id/analytics', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const analytics = deps.nftTradingService.getCollectionAnalytics(id);
+    if (!analytics) {
+      return reply.code(404).send(toErrorEnvelope(ErrorCode.NftCollectionNotFound, 'NFT collection not found.'));
+    }
+    return analytics;
+  });
+
+  const nftValuationSchema = z.object({
+    tokenId: z.string().min(1),
+    collectionId: z.string().min(1),
+    traits: z.array(z.object({
+      traitType: z.string().min(1),
+      value: z.string().min(1),
+      rarityPct: z.number().min(0).max(100),
+    })).optional(),
+  });
+
+  app.post('/nft/valuation', async (request, reply) => {
+    const parse = nftValuationSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid NFT valuation payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    const valuation = deps.nftTradingService.valuateNft(parse.data);
+    if (!valuation) {
+      return reply.code(404).send(toErrorEnvelope(ErrorCode.NftCollectionNotFound, 'NFT collection not found.'));
+    }
+    return valuation;
+  });
+
+  app.get('/nft/portfolio/:agentId', async (request) => {
+    const { agentId } = request.params as { agentId: string };
+    return deps.nftTradingService.getPortfolio(agentId);
+  });
+
+  app.get('/nft/wash-detect/:collectionId', async (request, reply) => {
+    const { collectionId } = request.params as { collectionId: string };
+    const report = deps.nftTradingService.detectWashTrading(collectionId);
+    if (!report) {
+      return reply.code(404).send(toErrorEnvelope(ErrorCode.NftCollectionNotFound, 'NFT collection not found.'));
+    }
+    return report;
   });
 }
