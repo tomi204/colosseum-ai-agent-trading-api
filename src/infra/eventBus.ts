@@ -63,7 +63,10 @@ export type EventType =
   | 'prediction.market.created'
   | 'prediction.market.resolved'
   | 'prediction.shares.bought'
-  | 'prediction.shares.sold';
+  | 'prediction.shares.sold'
+  | 'data.ingested'
+  | 'data.subscribed'
+  | 'data.delivered';
 
 export type EventCallback = (event: EventType, data: unknown) => void;
 

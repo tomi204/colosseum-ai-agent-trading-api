@@ -225,6 +225,7 @@ export async function buildApp(config: AppConfig): Promise<AppContext> {
   const nftTradingService = new NftTradingService(stateStore);
   const predictionMarketService = new PredictionMarketService();
   const agentIdentityService = new AgentIdentityService();
+  const dataPipelineService = new DataPipelineService();
 
   // Start notification listener
   notificationService.startListening();
@@ -328,6 +329,7 @@ export async function buildApp(config: AppConfig): Promise<AppContext> {
     nftTradingService,
     predictionMarketService,
     agentIdentityService,
+    dataPipelineService,
     x402Policy,
     getRuntimeMetrics: () => {
       const state = stateStore.snapshot();
