@@ -64,7 +64,6 @@ import { AgentPersonalityService } from './services/agentPersonalityService.js';
 import { GasOptimizationService } from './services/gasOptimizationService.js';
 import { LiquidityAnalysisService } from './services/liquidityAnalysisService.js';
 import { AgentMarketplaceService } from './services/agentMarketplaceService.js';
-import { ComplianceService } from './services/complianceService.js';
 import { PortfolioAnalyticsService } from './services/portfolioAnalyticsService.js';
 import { ComplianceService } from './services/complianceService.js';
 import { RateLimiter } from './api/rateLimiter.js';
@@ -178,7 +177,6 @@ export async function buildApp(config: AppConfig): Promise<AppContext> {
   const liquidityAnalysisService = new LiquidityAnalysisService(stateStore);
   const portfolioAnalyticsService = new PortfolioAnalyticsService(stateStore);
   const agentMarketplaceService = new AgentMarketplaceService(stateStore);
-  const complianceService = new ComplianceService(stateStore);
   const complianceService = new ComplianceService(stateStore);
 
   // Start notification listener
