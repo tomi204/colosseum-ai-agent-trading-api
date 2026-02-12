@@ -75,6 +75,9 @@ import { RiskScenarioService } from './services/riskScenarioService.js';
 import { StrategyGeneratorService } from './services/strategyGeneratorService.js';
 import { OnChainGovernanceService } from './services/onChainGovernanceService.js';
 import { YieldFarmingService } from './services/yieldFarmingService.js';
+import { PositionSizingService } from './services/positionSizingService.js';
+import { InsuranceService } from './services/insuranceService.js';
+import { MicrostructureService } from './services/microstructureService.js';
 import { RateLimiter } from './api/rateLimiter.js';
 import { StagedPipeline } from './domain/execution/stagedPipeline.js';
 
@@ -196,6 +199,9 @@ export async function buildApp(config: AppConfig): Promise<AppContext> {
   const strategyGeneratorService = new StrategyGeneratorService(stateStore);
   const onChainGovernanceService = new OnChainGovernanceService(stateStore);
   const yieldFarmingService = new YieldFarmingService();
+  const positionSizingService = new PositionSizingService();
+  const insuranceService = new InsuranceService(stateStore);
+  const microstructureService = new MicrostructureService(stateStore);
 
   // Start notification listener
   notificationService.startListening();
@@ -285,6 +291,9 @@ export async function buildApp(config: AppConfig): Promise<AppContext> {
     strategyGeneratorService,
     onChainGovernanceService,
     yieldFarmingService,
+    positionSizingService,
+    insuranceService,
+    microstructureService,
     x402Policy,
     getRuntimeMetrics: () => {
       const state = stateStore.snapshot();

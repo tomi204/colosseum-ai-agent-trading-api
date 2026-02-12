@@ -76,6 +76,9 @@ import { RiskScenarioService } from '../services/riskScenarioService.js';
 import { OnChainGovernanceService } from '../services/onChainGovernanceService.js';
 import { StrategyGeneratorService } from '../services/strategyGeneratorService.js';
 import { YieldFarmingService } from '../services/yieldFarmingService.js';
+import { PositionSizingService } from '../services/positionSizingService.js';
+import { InsuranceService, CoverageType } from '../services/insuranceService.js';
+import { MicrostructureService } from '../services/microstructureService.js';
 import { RateLimiter } from './rateLimiter.js';
 import { StagedPipeline } from '../domain/execution/stagedPipeline.js';
 import { RuntimeMetrics } from '../types.js';
@@ -152,6 +155,9 @@ interface RouteDeps {
   strategyGeneratorService: StrategyGeneratorService;
   onChainGovernanceService: OnChainGovernanceService;
   yieldFarmingService: YieldFarmingService;
+  positionSizingService: PositionSizingService;
+  insuranceService: InsuranceService;
+  microstructureService: MicrostructureService;
   getRuntimeMetrics: () => RuntimeMetrics;
 }
 
@@ -4129,4 +4135,318 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps): Pro
   app.get('/yield/risk-adjusted', async () => ({
     rankings: deps.yieldFarmingService.getRiskAdjustedRanking(),
   }));
+
+  // ─── Position Sizing Engine endpoints ─────────────────────────────────
+
+  const kellySchema = z.object({
+    winRate: z.number().min(0).max(1),
+    payoffRatio: z.number().positive(),
+    portfolioValueUsd: z.number().positive(),
+    fraction: z.number().min(0).max(1).optional(),
+  });
+
+  app.post('/position-sizing/kelly', async (request, reply) => {
+    const parse = kellySchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid Kelly payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    try {
+      return deps.positionSizingService.calculateKelly(parse.data);
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  const fixedFractionalSchema = z.object({
+    portfolioValueUsd: z.number().positive(),
+    riskPerTradePct: z.number().min(0).max(1),
+    entryPriceUsd: z.number().positive(),
+    stopLossPriceUsd: z.number().positive(),
+  });
+
+  app.post('/position-sizing/fixed-fractional', async (request, reply) => {
+    const parse = fixedFractionalSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid fixed-fractional payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    try {
+      return deps.positionSizingService.calculateFixedFractional(parse.data);
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  const volatilitySizingSchema = z.object({
+    portfolioValueUsd: z.number().positive(),
+    atr: z.number().positive(),
+    riskPerTradePct: z.number().min(0).max(1),
+    currentPriceUsd: z.number().positive(),
+    atrMultiplier: z.number().positive().optional(),
+  });
+
+  app.post('/position-sizing/volatility', async (request, reply) => {
+    const parse = volatilitySizingSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid volatility sizing payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    try {
+      return deps.positionSizingService.calculateVolatilitySizing(parse.data);
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  const antiMartingaleSchema = z.object({
+    portfolioValueUsd: z.number().positive(),
+    baseRiskPct: z.number().min(0).max(1),
+    consecutiveWins: z.number().int().nonnegative(),
+    consecutiveLosses: z.number().int().nonnegative(),
+    winScaleUpPct: z.number().min(0).max(1).optional(),
+    lossScaleDownPct: z.number().min(0).max(1).optional(),
+    maxRiskPct: z.number().min(0).max(1).optional(),
+    minRiskPct: z.number().min(0).max(1).optional(),
+  });
+
+  app.post('/position-sizing/anti-martingale', async (request, reply) => {
+    const parse = antiMartingaleSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid anti-martingale payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    try {
+      return deps.positionSizingService.calculateAntiMartingale(parse.data);
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  app.get('/position-sizing/heat/:agentId', async (request) => {
+    const { agentId } = request.params as { agentId: string };
+    return deps.positionSizingService.getHeat(agentId);
+  });
+
+  const optimalSizingSchema = z.object({
+    portfolioValueUsd: z.number().positive(),
+    peakPortfolioValueUsd: z.number().positive().optional(),
+    winRate: z.number().min(0).max(1).optional(),
+    payoffRatio: z.number().positive().optional(),
+    atr: z.number().positive().optional(),
+    currentPriceUsd: z.number().positive().optional(),
+    entryPriceUsd: z.number().positive().optional(),
+    stopLossPriceUsd: z.number().positive().optional(),
+    consecutiveWins: z.number().int().nonnegative().optional(),
+    consecutiveLosses: z.number().int().nonnegative().optional(),
+    riskPerTradePct: z.number().min(0).max(1).optional(),
+    maxDrawdownPct: z.number().min(0).max(1).optional(),
+  });
+
+  app.post('/position-sizing/optimal', async (request, reply) => {
+    const parse = optimalSizingSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid optimal sizing payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    try {
+      return deps.positionSizingService.calculateOptimal(parse.data);
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  // ─── Insurance & Protection ──────────────────────────────────────────
+
+  app.get('/insurance/pool', async () => {
+    return { pool: deps.insuranceService.getPoolStatus() };
+  });
+
+  const insuranceContributeSchema = z.object({
+    agentId: z.string().min(2),
+    amountUsd: z.number().positive(),
+  });
+
+  app.post('/insurance/contribute', async (request, reply) => {
+    const parse = insuranceContributeSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid contribution payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    try {
+      const contribution = deps.insuranceService.contribute(parse.data.agentId, parse.data.amountUsd);
+      return reply.code(201).send({ contribution });
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  const VALID_COVERAGE_TYPES: CoverageType[] = ['smart-contract-risk', 'slippage', 'black-swan', 'liquidation', 'oracle-failure'];
+
+  const insurancePolicySchema = z.object({
+    agentId: z.string().min(2),
+    coverageType: z.enum(['smart-contract-risk', 'slippage', 'black-swan', 'liquidation', 'oracle-failure']),
+    coverageAmountUsd: z.number().positive(),
+  });
+
+  app.post('/insurance/policies', async (request, reply) => {
+    const parse = insurancePolicySchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid policy payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    try {
+      const policy = deps.insuranceService.createPolicy(
+        parse.data.agentId,
+        parse.data.coverageType,
+        parse.data.coverageAmountUsd,
+      );
+      return reply.code(201).send({ policy });
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  app.get('/insurance/policies/:agentId', async (request) => {
+    const { agentId } = request.params as { agentId: string };
+    return {
+      agentId,
+      policies: deps.insuranceService.getAgentPolicies(agentId),
+    };
+  });
+
+  const insuranceClaimSchema = z.object({
+    policyId: z.string().min(1),
+    agentId: z.string().min(2),
+    claimedAmountUsd: z.number().positive(),
+    reason: z.string().min(1),
+    evidence: z.string().min(1),
+  });
+
+  app.post('/insurance/claims', async (request, reply) => {
+    const parse = insuranceClaimSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid claim payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    try {
+      const claim = deps.insuranceService.submitClaim(
+        parse.data.policyId,
+        parse.data.agentId,
+        parse.data.claimedAmountUsd,
+        parse.data.reason,
+        parse.data.evidence,
+      );
+      return reply.code(201).send({ claim });
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  app.get('/insurance/claims/:agentId', async (request) => {
+    const { agentId } = request.params as { agentId: string };
+    return {
+      agentId,
+      claims: deps.insuranceService.getAgentClaims(agentId),
+    };
+  });
+
+  app.get('/insurance/premium/:agentId', async (request, reply) => {
+    const { agentId } = request.params as { agentId: string };
+    const query = request.query as { coverageType?: string; coverageAmountUsd?: string };
+
+    const coverageType = (query.coverageType ?? 'smart-contract-risk') as CoverageType;
+    if (!VALID_COVERAGE_TYPES.includes(coverageType)) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        `Invalid coverage type. Must be one of: ${VALID_COVERAGE_TYPES.join(', ')}`,
+      ));
+    }
+
+    const coverageAmountUsd = query.coverageAmountUsd ? Number(query.coverageAmountUsd) : 10_000;
+    if (isNaN(coverageAmountUsd) || coverageAmountUsd <= 0) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'coverageAmountUsd must be a positive number.',
+      ));
+    }
+
+    const quote = deps.insuranceService.calculatePremium(agentId, coverageType, coverageAmountUsd);
+    return { quote };
+  });
+
+  // ─── Market Microstructure endpoints ────────────────────────────────
+
+  app.get('/microstructure/:symbol/flow', async (request) => {
+    const { symbol } = request.params as { symbol: string };
+    const query = request.query as { windowMs?: string };
+    const windowMs = query.windowMs ? Number(query.windowMs) : undefined;
+    return deps.microstructureService.getFlowImbalance(symbol, windowMs);
+  });
+
+  app.get('/microstructure/:symbol/toxicity', async (request) => {
+    const { symbol } = request.params as { symbol: string };
+    const query = request.query as { windowMs?: string };
+    const windowMs = query.windowMs ? Number(query.windowMs) : undefined;
+    return deps.microstructureService.getToxicityScore(symbol, windowMs);
+  });
+
+  app.get('/microstructure/:symbol/spread', async (request) => {
+    const { symbol } = request.params as { symbol: string };
+    const query = request.query as { limit?: string };
+    const limit = query.limit ? Math.min(Math.max(Number(query.limit), 1), 500) : undefined;
+    return deps.microstructureService.getSpreadAnalysis(symbol, limit);
+  });
+
+  app.get('/microstructure/:symbol/volume-profile', async (request) => {
+    const { symbol } = request.params as { symbol: string };
+    const query = request.query as { buckets?: string };
+    const buckets = query.buckets ? Math.min(Math.max(Number(query.buckets), 5), 100) : undefined;
+    return deps.microstructureService.getVolumeProfile(symbol, buckets);
+  });
+
+  app.get('/microstructure/:symbol/whales', async (request) => {
+    const { symbol } = request.params as { symbol: string };
+    return deps.microstructureService.getWhaleActivity(symbol);
+  });
 }
