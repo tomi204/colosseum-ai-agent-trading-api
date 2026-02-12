@@ -28,6 +28,8 @@ export const ErrorCode = {
   SubscriptionNotFound: 'subscription_not_found',
   SandboxNotFound: 'sandbox_not_found',
   SkillNotFound: 'skill_not_found',
+  CollaborationNotFound: 'collaboration_not_found',
+  StressTestNotFound: 'stress_test_not_found',
   InternalError: 'internal_error',
 } as const;
 

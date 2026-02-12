@@ -54,6 +54,10 @@ import { TimeframeService } from '../services/timeframeService.js';
 import { NotificationService, subscribeSchema as notificationSubscribeSchema } from '../services/notificationService.js';
 import { SentimentService } from '../services/sentimentService.js';
 import { SandboxService, createSandboxSchema, runSandboxSchema } from '../services/sandboxService.js';
+import { SkillsMarketplaceService, SKILL_CATEGORIES } from '../services/skillsMarketplaceService.js';
+import { ExecutionAnalyticsService } from '../services/executionAnalyticsService.js';
+import { CollaborationService } from '../services/collaborationService.js';
+import { StressTestService } from '../services/stressTestService.js';
 import { RateLimiter } from './rateLimiter.js';
 import { StagedPipeline } from '../domain/execution/stagedPipeline.js';
 import { RuntimeMetrics } from '../types.js';
@@ -108,6 +112,10 @@ interface RouteDeps {
   notificationService: NotificationService;
   sentimentService: SentimentService;
   sandboxService: SandboxService;
+  skillsMarketplaceService: SkillsMarketplaceService;
+  executionAnalyticsService: ExecutionAnalyticsService;
+  collaborationService: CollaborationService;
+  stressTestService: StressTestService;
   getRuntimeMetrics: () => RuntimeMetrics;
 }
 
@@ -2146,6 +2154,189 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps): Pro
   app.get('/analytics/latency', async () =>
     deps.executionAnalyticsService.getLatencyMetrics(),
   );
+
+  // ─── Collaboration endpoints ────────────────────────────────────────
+
+  const proposeCollaborationSchema = z.object({
+    initiatorId: z.string().min(2),
+    targetId: z.string().min(2),
+    terms: z.object({
+      type: z.enum(['signal-sharing', 'co-trading', 'strategy-exchange']),
+      durationMs: z.number().positive(),
+      profitSplitPct: z.number().min(0).max(100),
+    }),
+  });
+
+  app.post('/collaborations', async (request, reply) => {
+    const parse = proposeCollaborationSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid collaboration payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    try {
+      const collab = deps.collaborationService.proposeCollaboration(
+        parse.data.initiatorId,
+        parse.data.targetId,
+        parse.data.terms,
+      );
+      return reply.code(201).send({ collaboration: collab });
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  const collabAgentSchema = z.object({
+    agentId: z.string().min(2),
+  });
+
+  app.post('/collaborations/:id/accept', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const parse = collabAgentSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid accept payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    try {
+      const collab = deps.collaborationService.acceptCollaboration(id, parse.data.agentId);
+      return { collaboration: collab };
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  app.post('/collaborations/:id/reject', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const parse = collabAgentSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid reject payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    try {
+      const collab = deps.collaborationService.rejectCollaboration(id, parse.data.agentId);
+      return { collaboration: collab };
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  app.get('/collaborations', async (request) => {
+    const query = request.query as { agentId?: string };
+    if (query.agentId) {
+      return { collaborations: deps.collaborationService.getActiveCollaborations(query.agentId) };
+    }
+    return { collaborations: [] };
+  });
+
+  const shareSignalSchema = z.object({
+    symbol: z.string().min(1).max(20),
+    side: z.enum(['buy', 'sell']),
+    confidence: z.number().min(0).max(1),
+    priceTarget: z.number().positive().optional(),
+    notes: z.string().max(500).optional(),
+  });
+
+  app.post('/collaborations/:id/signals', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const parse = shareSignalSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid signal payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    try {
+      const signal = deps.collaborationService.shareSignal(id, parse.data);
+      return reply.code(201).send({ signal });
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  app.get('/collaborations/:id/signals', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    try {
+      return { signals: deps.collaborationService.getSharedSignals(id) };
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  app.delete('/collaborations/:id', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const query = request.query as { agentId?: string };
+    if (!query.agentId) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'agentId query parameter is required to terminate a collaboration.',
+      ));
+    }
+
+    try {
+      const collab = deps.collaborationService.terminateCollaboration(id, query.agentId);
+      return { collaboration: collab };
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  // ─── Stress Test endpoints ────────────────────────────────────────────
+
+  const runStressTestSchema = z.object({
+    scenarios: z.array(z.string().min(1)).optional(),
+  });
+
+  app.post('/agents/:agentId/stress-test', async (request, reply) => {
+    const { agentId } = request.params as { agentId: string };
+    const parse = runStressTestSchema.safeParse(request.body ?? {});
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid stress test payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    try {
+      const result = deps.stressTestService.runStressTest(agentId, parse.data.scenarios);
+      return reply.code(201).send({ result });
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  app.get('/agents/:agentId/stress-test/:id', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const result = deps.stressTestService.getStressTestResults(id);
+    if (!result) {
+      return reply.code(404).send(toErrorEnvelope(ErrorCode.StressTestNotFound, 'Stress test result not found.'));
+    }
+    return { result };
+  });
+
+  app.get('/stress-test/scenarios', async () => ({
+    scenarios: deps.stressTestService.listScenarios(),
+  }));
 
   app.get('/state', async () => deps.store.snapshot());
 }
