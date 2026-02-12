@@ -72,6 +72,9 @@ import { TelemetryService } from './services/telemetryService.js';
 import { TokenLaunchService } from './services/tokenLaunchService.js';
 import { AgentCommService } from './services/agentCommService.js';
 import { RiskScenarioService } from './services/riskScenarioService.js';
+import { StrategyGeneratorService } from './services/strategyGeneratorService.js';
+import { OnChainGovernanceService } from './services/onChainGovernanceService.js';
+import { YieldFarmingService } from './services/yieldFarmingService.js';
 import { RateLimiter } from './api/rateLimiter.js';
 import { StagedPipeline } from './domain/execution/stagedPipeline.js';
 
@@ -190,6 +193,9 @@ export async function buildApp(config: AppConfig): Promise<AppContext> {
   const tokenLaunchService = new TokenLaunchService();
   const agentCommService = new AgentCommService(stateStore, config.privacy.serverSecret);
   const riskScenarioService = new RiskScenarioService(stateStore);
+  const strategyGeneratorService = new StrategyGeneratorService(stateStore);
+  const onChainGovernanceService = new OnChainGovernanceService(stateStore);
+  const yieldFarmingService = new YieldFarmingService();
 
   // Start notification listener
   notificationService.startListening();
@@ -276,6 +282,9 @@ export async function buildApp(config: AppConfig): Promise<AppContext> {
     tokenLaunchService,
     agentCommService,
     riskScenarioService,
+    strategyGeneratorService,
+    onChainGovernanceService,
+    yieldFarmingService,
     x402Policy,
     getRuntimeMetrics: () => {
       const state = stateStore.snapshot();

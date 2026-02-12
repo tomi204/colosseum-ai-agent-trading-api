@@ -73,6 +73,9 @@ import { TelemetryService } from '../services/telemetryService.js';
 import { TokenLaunchService } from '../services/tokenLaunchService.js';
 import { AgentCommService } from '../services/agentCommService.js';
 import { RiskScenarioService } from '../services/riskScenarioService.js';
+import { OnChainGovernanceService } from '../services/onChainGovernanceService.js';
+import { StrategyGeneratorService } from '../services/strategyGeneratorService.js';
+import { YieldFarmingService } from '../services/yieldFarmingService.js';
 import { RateLimiter } from './rateLimiter.js';
 import { StagedPipeline } from '../domain/execution/stagedPipeline.js';
 import { RuntimeMetrics } from '../types.js';
@@ -146,6 +149,9 @@ interface RouteDeps {
   tokenLaunchService: TokenLaunchService;
   agentCommService: AgentCommService;
   riskScenarioService: RiskScenarioService;
+  strategyGeneratorService: StrategyGeneratorService;
+  onChainGovernanceService: OnChainGovernanceService;
+  yieldFarmingService: YieldFarmingService;
   getRuntimeMetrics: () => RuntimeMetrics;
 }
 
@@ -3799,4 +3805,328 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps): Pro
       return undefined;
     }
   });
+
+  // ─── Strategy Generator Routes ──────────────────────────────────────
+
+  const generateStrategySchema = z.object({
+    regime: z.enum(['trending-up', 'trending-down', 'ranging', 'volatile']),
+    templateId: z.string().optional(),
+    performanceHints: z.object({
+      preferredWinRate: z.number().min(0).max(1).optional(),
+      maxDrawdown: z.number().positive().optional(),
+      targetReturnPct: z.number().optional(),
+    }).optional(),
+    count: z.number().int().min(1).max(20).optional(),
+  });
+
+  app.post('/strategies/generate', async (request, reply) => {
+    const parse = generateStrategySchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid generation payload.',
+        parse.error.flatten(),
+      ));
+    }
+    try {
+      const strategies = deps.strategyGeneratorService.generate(parse.data);
+      return { strategies };
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  app.get('/strategies/templates', async () => {
+    const templates = deps.strategyGeneratorService.listTemplates();
+    return { templates };
+  });
+
+  const validateStrategySchema = z.object({
+    strategyId: z.string().min(1),
+    priceHistory: z.array(z.number()).min(5),
+    startingCapitalUsd: z.number().positive(),
+  });
+
+  app.post('/strategies/validate', async (request, reply) => {
+    const parse = validateStrategySchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid validation payload.',
+        parse.error.flatten(),
+      ));
+    }
+    try {
+      const result = deps.strategyGeneratorService.validate(parse.data);
+      return { result };
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  app.get('/strategies/:id/versions', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    try {
+      const versions = deps.strategyGeneratorService.getVersions(id);
+      return { strategyId: id, versions };
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  const evolveSchema = z.object({
+    strategyIds: z.array(z.string()).min(2),
+    generations: z.number().int().min(1).max(50).optional(),
+    mutationRate: z.number().min(0).max(1).optional(),
+    crossoverRate: z.number().min(0).max(1).optional(),
+    eliteCount: z.number().int().min(1).optional(),
+    priceHistory: z.array(z.number()).min(5),
+  });
+
+  app.post('/strategies/evolve', async (request, reply) => {
+    const parse = evolveSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid evolution payload.',
+        parse.error.flatten(),
+      ));
+    }
+    try {
+      const result = deps.strategyGeneratorService.evolve(parse.data);
+      return { result };
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  app.get('/strategies/:id/dna', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    try {
+      const dna = deps.strategyGeneratorService.getDna(id);
+      return { dna };
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  // ─── On-Chain Governance Participation ────────────────────────────
+
+  app.get('/on-chain-governance/proposals', async (request) => {
+    const query = request.query as { daoName?: string; status?: string; category?: string };
+    const proposals = deps.onChainGovernanceService.listProposals({
+      daoName: query.daoName,
+      status: query.status as any,
+      category: query.category as any,
+    });
+    return { proposals };
+  });
+
+  const onChainAnalyzeSchema = z.object({
+    agentId: z.string().min(1),
+  });
+
+  app.post('/on-chain-governance/proposals/:id/analyze', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const parse = onChainAnalyzeSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid analysis payload.',
+        parse.error.flatten(),
+      ));
+    }
+    try {
+      const analysis = deps.onChainGovernanceService.analyzeProposal(id, parse.data.agentId);
+      return { analysis };
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  const onChainVoteSchema = z.object({
+    agentId: z.string().min(1),
+    proposalId: z.string().min(1),
+    choice: z.enum(['for', 'against', 'abstain']),
+    votingPower: z.number().positive().optional(),
+    rationale: z.string().optional(),
+  });
+
+  app.post('/on-chain-governance/vote', async (request, reply) => {
+    const parse = onChainVoteSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid vote payload.',
+        parse.error.flatten(),
+      ));
+    }
+    try {
+      const vote = deps.onChainGovernanceService.castVote(parse.data);
+      return { vote };
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  app.get('/on-chain-governance/delegations/:agentId', async (request) => {
+    const { agentId } = request.params as { agentId: string };
+    const delegations = deps.onChainGovernanceService.getDelegations(agentId);
+    return { delegations };
+  });
+
+  const onChainDelegateSchema = z.object({
+    fromAgentId: z.string().min(1),
+    toDelegate: z.string().min(1),
+    daoName: z.string().min(1),
+    votingPower: z.number().positive(),
+    expiresAt: z.string().optional(),
+  });
+
+  app.post('/on-chain-governance/delegate', async (request, reply) => {
+    const parse = onChainDelegateSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid delegation payload.',
+        parse.error.flatten(),
+      ));
+    }
+    try {
+      const delegation = deps.onChainGovernanceService.delegate(parse.data);
+      return { delegation };
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  app.get('/on-chain-governance/calendar', async (request) => {
+    const query = request.query as { daoName?: string; status?: string };
+    const events = deps.onChainGovernanceService.getCalendar({
+      daoName: query.daoName,
+      status: query.status as any,
+    });
+    return { events };
+  });
+
+  app.get('/on-chain-governance/history/:agentId', async (request, reply) => {
+    const { agentId } = request.params as { agentId: string };
+    try {
+      const history = deps.onChainGovernanceService.getHistory(agentId);
+      return { history };
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  // ─── Yield Farming Optimizer endpoints ──────────────────────────────
+
+  app.get('/yield/opportunities', async (request) => {
+    const query = request.query as {
+      protocol?: string;
+      minApy?: string;
+      maxRisk?: string;
+      chain?: string;
+      sortBy?: string;
+    };
+
+    const filters: Record<string, unknown> = {};
+    if (query.protocol) filters.protocol = query.protocol;
+    if (query.minApy) filters.minApy = Number(query.minApy);
+    if (query.maxRisk && ['low', 'medium', 'high', 'very-high'].includes(query.maxRisk)) {
+      filters.maxRisk = query.maxRisk;
+    }
+    if (query.chain) filters.chain = query.chain;
+    if (query.sortBy && ['apy', 'tvl', 'risk'].includes(query.sortBy)) {
+      filters.sortBy = query.sortBy;
+    }
+
+    return {
+      opportunities: deps.yieldFarmingService.scanOpportunities(filters as any),
+    };
+  });
+
+  app.get('/yield/opportunities/:id', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const opp = deps.yieldFarmingService.getOpportunity(id);
+    if (!opp) {
+      return reply.code(404).send(toErrorEnvelope(
+        ErrorCode.AgentNotFound,
+        'Yield opportunity not found.',
+      ));
+    }
+    return { opportunity: opp };
+  });
+
+  const yieldCalculateSchema = z.object({
+    principalUsd: z.number().positive(),
+    apy: z.number().positive(),
+    compoundsPerYear: z.number().int().positive(),
+    durationYears: z.number().positive().optional(),
+    gasCostPerCompoundUsd: z.number().nonnegative().optional(),
+  });
+
+  app.post('/yield/calculate', async (request, reply) => {
+    const parse = yieldCalculateSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid yield calculation payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    const result = deps.yieldFarmingService.calculateCompound(parse.data);
+    return { result };
+  });
+
+  app.get('/yield/positions/:agentId', async (request) => {
+    const { agentId } = request.params as { agentId: string };
+    return {
+      agentId,
+      positions: deps.yieldFarmingService.getPositions(agentId),
+    };
+  });
+
+  const yieldEnterPositionSchema = z.object({
+    agentId: z.string().min(2),
+    opportunityId: z.string().min(1),
+    depositedUsd: z.number().positive(),
+  });
+
+  app.post('/yield/positions', async (request, reply) => {
+    const parse = yieldEnterPositionSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send(toErrorEnvelope(
+        ErrorCode.InvalidPayload,
+        'Invalid yield position payload.',
+        parse.error.flatten(),
+      ));
+    }
+
+    try {
+      const position = deps.yieldFarmingService.enterPosition(parse.data);
+      return reply.code(201).send({ position });
+    } catch (error) {
+      sendDomainError(reply, error);
+      return undefined;
+    }
+  });
+
+  app.get('/yield/protocol-risk', async () => ({
+    protocols: deps.yieldFarmingService.getProtocolRiskScores(),
+  }));
+
+  app.get('/yield/risk-adjusted', async () => ({
+    rankings: deps.yieldFarmingService.getRiskAdjustedRanking(),
+  }));
 }
